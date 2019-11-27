@@ -1,0 +1,7 @@
+domain: tommylike.com
+repo: github.com/tommylike/code-server-operator
+resources:
+- group: cs
+  kind: CodeServer
+  version: v1alpha1
+version: "2"

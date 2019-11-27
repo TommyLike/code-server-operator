@@ -1,0 +1,7 @@
+apiVersion: cs.tommylike.com/v1alpha1
+kind: CodeServer
+metadata:
+  name: codeserver-sample
+spec:
+  # Add fields here
+  foo: bar

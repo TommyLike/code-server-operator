@@ -1,0 +1,26 @@
+# permissions to do edit codeservers.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: codeserver-editor-role
+rules:
+- apiGroups:
+  - cs.tommylike.com
+  resources:
+  - codeservers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cs.tommylike.com
+  resources:
+  - codeservers/status
+  verbs:
+  - get
+  - patch
+  - update
