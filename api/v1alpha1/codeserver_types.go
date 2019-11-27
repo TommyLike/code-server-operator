@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -25,17 +26,57 @@ import (
 
 // CodeServerSpec defines the desired state of CodeServer
 type CodeServerSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Specifies the volume size that will be used for code server
+	VolumeSize string `json:"volumeSize,omitempty" protobuf:"bytes,2,opt,name=volumeSize"`
+	// Specifies the storage class name for the persistent volume
+	StorageClassName string `json:"storageClassName,omitempty" protobuf:"bytes,3,opt,name=storageClassName"`
+	// Specifies the period before controller recycle the resource.
+	RecycleAfterSeconds *int64 `json:"recycleAfterSeconds,omitempty" protobuf:"bytes,4,opt,name=recycleAfterSeconds"`
+	// Specifies the resource requirements for code server pod.
+	Resources v1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,5,opt,name=resources"`
+	// Specifies the cipher for coder server login
+	ServerCipher string `json:"serverCipher,omitempty" protobuf:"bytes,6,opt,name=serverCipher"`
+	// Specifies the url for website visiting
+	URL string `json:"url,omitempty" protobuf:"bytes,7,opt,name=url"`
+	// Specifies the image used to running code server
+	Image string `json:"image,omitempty" protobuf:"bytes,7,opt,name=image"`
+}
 
-	// Foo is an example field of CodeServer. Edit CodeServer_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+// ServerConditionType describes the type of state of code server condition
+type ServerConditionType string
+
+const (
+	// ServerCreated means the code server has been accepted by the system.
+	ServerCreated ServerConditionType = "ServerCreated"
+	// ServerReady means the code server has been ready for usage.
+	ServerReady ServerConditionType = "ServerReady"
+	// ServerRecycled means the code server has been recycled.
+	ServerRecycled ServerConditionType = "ServerRecycled"
+	// ServerInactive means the code server will be recycled if `RecycleAfterSeconds` elapsed
+	ServerInactive ServerConditionType = "ServerInactive"
+
+)
+
+// ServerCondition describes the state of the code server at a certain point.
+type ServerCondition struct {
+	// Type of code server condition.
+	Type ServerConditionType `json:"type"`
+	// Status of the condition, one of True, False, Unknown.
+	Status v1.ConditionStatus `json:"status"`
+	// The reason for the condition's last transition.
+	Reason string `json:"reason,omitempty"`
+	// A human readable message indicating details about the transition.
+	Message string `json:"message,omitempty"`
+	// The last time this condition was updated.
+	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
+	// Last time the condition transitioned from one status to another.
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
 }
 
 // CodeServerStatus defines the observed state of CodeServer
 type CodeServerStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	//Server conditions
+	Conditions []ServerCondition `json:"conditions,omitempty" protobuf:"bytes,1,opt,name=conditions"`
 }
 
 // +kubebuilder:object:root=true

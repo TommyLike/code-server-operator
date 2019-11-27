@@ -3,5 +3,13 @@ kind: CodeServer
 metadata:
   name: codeserver-sample
 spec:
-  # Add fields here
-  foo: bar
+  url: codeserversample
+  image: "codercom/code-server:v2"
+  volumeSize: "100m"
+  storageClassName: "local-nfs"
+  recycleAfterSeconds: 500
+  resources:
+    requests:
+      cpu: "1"
+  serverCipher: "1234"
+
