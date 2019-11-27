@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/api/extensions/v1beta1"
@@ -26,15 +27,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	resourcev1 "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	csv1alpha1 "github.com/tommylike/code-server-operator/api/v1alpha1"
 )
@@ -62,7 +61,10 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 	err := r.Client.Get(context.TODO(), req.NamespacedName, codeServer)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			reqLogger.Info("CodeServer resource not found. Ignoring since object must be deleted.")
+			reqLogger.Info("CodeServer has been deleted. Trying to delete its related resources.")
+			if err := r.deleteCodeServerResource(req.Name, req.Namespace, true); err != nil {
+				return reconcile.Result{Requeue: true}, err
+			}
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -71,11 +73,11 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 	}
 
 	if HasCondition(codeServer.Status, csv1alpha1.ServerInactive) {
-		if err := r.deleteCodeServerResource(codeServer, false); err != nil {
+		if err := r.deleteCodeServerResource(codeServer.Name, codeServer.Namespace, false); err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
 	} else if HasCondition(codeServer.Status, csv1alpha1.ServerRecycled) {
-		if err := r.deleteCodeServerResource(codeServer, true); err != nil {
+		if err := r.deleteCodeServerResource(codeServer.Name, codeServer.Namespace, true); err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
 	} else {
@@ -119,12 +121,12 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 	return reconcile.Result{}, nil
 }
 
-func (r *CodeServerReconciler) deleteCodeServerResource(codeServer *csv1alpha1.CodeServer, includePVC bool) error {
-	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
+func (r *CodeServerReconciler) deleteCodeServerResource(name, namespace string, includePVC bool) error {
+	reqLogger := r.Log.WithValues("namespace", name, "name", namespace)
 	reqLogger.Info("Deleting code server resources.")
 	//delete ingress
 	ing := &extv1.Ingress{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, ing)
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, ing)
 	//error of getting object is ignored
 	if err == nil {
 		err = r.Client.Delete(context.TODO(), ing)
@@ -137,7 +139,7 @@ func (r *CodeServerReconciler) deleteCodeServerResource(codeServer *csv1alpha1.C
 	}
 	//delete service
 	srv := &corev1.Service{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, srv)
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, srv)
 	//error of getting object is ignored
 	if err == nil {
 		err = r.Client.Delete(context.TODO(), srv)
@@ -150,7 +152,7 @@ func (r *CodeServerReconciler) deleteCodeServerResource(codeServer *csv1alpha1.C
 	}
 	//delete deployment
 	app := &appsv1.Deployment{}
-	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, app)
+	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, app)
 	//error of getting object is ignored
 	if err == nil {
 		err = r.Client.Delete(context.TODO(), app)
@@ -164,7 +166,7 @@ func (r *CodeServerReconciler) deleteCodeServerResource(codeServer *csv1alpha1.C
 	if includePVC {
 		//delete pvc
 		pvc := &corev1.PersistentVolumeClaim{}
-		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, pvc)
+		err = r.Client.Get(context.TODO(), types.NamespacedName{Name: name, Namespace: namespace}, pvc)
 		//error of getting object is ignored
 		if err == nil {
 			err = r.Client.Delete(context.TODO(), pvc)
