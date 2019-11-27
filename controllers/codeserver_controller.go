@@ -39,6 +39,10 @@ import (
 	csv1alpha1 "github.com/tommylike/code-server-operator/api/v1alpha1"
 )
 
+const (
+	CSNAME = "code-server"
+)
+
 // CodeServerReconciler reconciles a CodeServer object
 type CodeServerReconciler struct {
 	client.Client
@@ -68,27 +72,27 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 
 	if HasCondition(codeServer.Status, csv1alpha1.ServerInactive) {
 		if err := r.deleteCodeServerResource(codeServer, false); err != nil {
-			return reconcile.Result{Requeue:true}, err
+			return reconcile.Result{Requeue: true}, err
 		}
 	} else if HasCondition(codeServer.Status, csv1alpha1.ServerRecycled) {
 		if err := r.deleteCodeServerResource(codeServer, true); err != nil {
-			return reconcile.Result{Requeue:true}, err
+			return reconcile.Result{Requeue: true}, err
 		}
 	} else {
 		// 1/5: reconcile PVC
 		_, err := r.reconcileForPVC(codeServer)
 		if err != nil {
-			return reconcile.Result{Requeue:true}, err
+			return reconcile.Result{Requeue: true}, err
 		}
 		// 2/5:reconcile ingress
 		_, err = r.reconcileForIngress(codeServer)
 		if err != nil {
-			return reconcile.Result{Requeue:true}, err
+			return reconcile.Result{Requeue: true}, err
 		}
 		// 3/5: reconcile service
 		_, err = r.reconcileForService(codeServer)
 		if err != nil {
-			return reconcile.Result{Requeue:true}, err
+			return reconcile.Result{Requeue: true}, err
 		}
 		// 4/5: reconcile deployment
 		dep, err := r.reconcileForDeployment(codeServer)
@@ -96,7 +100,7 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 			return reconcile.Result{Requeue: true}, err
 		}
 		// 5/5: update code server status
-		if HasCondition(codeServer.Status, csv1alpha1.ServerCreated) {
+		if !HasCondition(codeServer.Status, csv1alpha1.ServerCreated) {
 			createdCondition := NewStateCondition(csv1alpha1.ServerCreated,
 				"code server has been accepted", "")
 			SetCondition(&codeServer.Status, createdCondition)
@@ -108,15 +112,15 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		}
 		err = r.Client.Update(context.TODO(), codeServer)
 		if err != nil {
-			reqLogger.Error(err, "Failed to update code server status.", "CodeServer.Namespace", codeServer.Namespace, "CodeServer.Name", codeServer.Name)
-			return reconcile.Result{Requeue:true}, nil
+			reqLogger.Error(err, "Failed to update code server status.")
+			return reconcile.Result{Requeue: true}, nil
 		}
 	}
 	return reconcile.Result{}, nil
 }
 
 func (r *CodeServerReconciler) deleteCodeServerResource(codeServer *csv1alpha1.CodeServer, includePVC bool) error {
-	reqLogger := r.Log.WithValues("Request.Namespace", codeServer.Namespace, "Request.Name", codeServer.Name)
+	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
 	reqLogger.Info("Deleting code server resources.")
 	//delete ingress
 	ing := &extv1.Ingress{}
@@ -176,68 +180,65 @@ func (r *CodeServerReconciler) deleteCodeServerResource(codeServer *csv1alpha1.C
 }
 
 func (r *CodeServerReconciler) reconcileForPVC(codeServer *csv1alpha1.CodeServer) (*corev1.PersistentVolumeClaim, error) {
-	reqLogger := r.Log.WithValues("Request.Namespace", codeServer.Namespace, "Request.Name", codeServer.Name)
-	reqLogger.Info("Reconciling persistent volume claim for code server.")
+	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
+	reqLogger.Info("Reconciling persistent volume claim.")
 	//reconcile pvc for code server
 	newPvc, err := r.pvcForCodeServer(codeServer)
 	if err != nil {
-		reqLogger.Error(err, "Failed to create new PersistentVolumeClaim.", "PersistentVolumeClaim.Namespace", codeServer.Namespace, "PersistentVolumeClaim.Name", codeServer.Name)
+		reqLogger.Error(err, "Failed to create new PersistentVolumeClaim.")
 		return nil, err
 	}
 	oldPvc := &corev1.PersistentVolumeClaim{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, oldPvc)
 	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a PersistentVolumeClaim.", "PersistentVolumeClaim.Namespace", codeServer.Namespace, "PersistentVolumeClaim.Name", codeServer.Name)
+		reqLogger.Info("Creating a PersistentVolumeClaim.")
 		err = r.Client.Create(context.TODO(), newPvc)
 		if err != nil {
-			reqLogger.Error(err, "Failed to create PersistentVolumeClaim.", "PersistentVolumeClaim.Namespace", codeServer.Namespace, "PersistentVolumeClaim.Name", codeServer.Name)
-			return nil, err
+			reqLogger.Error(err, "Failed to create PersistentVolumeClaim.")
+			return nil, nil
 		}
-	}else {
+	} else {
 		if err != nil {
 			//Reschedule the event
 			reqLogger.Error(err, fmt.Sprintf("Failed to get PVC for %s.", codeServer.Name))
 			return nil, err
 		}
-		if !equality.Semantic.DeepEqual(oldPvc.Spec, newPvc.Spec){
-			oldPvc.Spec = newPvc.Spec
-			reqLogger.Info("Updating a PersistentVolumeClaim.", "PersistentVolumeClaim.Namespace", codeServer.Namespace, "PersistentVolumeClaim.Name", codeServer.Name)
-			err = r.Client.Update(context.TODO(), oldPvc)
-			if err != nil {
-				reqLogger.Error(err, "Failed to update PersistentVolumeClaim.", "PersistentVolumeClaim.Namespace", codeServer.Namespace, "PersistentVolumeClaim.Name", codeServer.Name)
-				return nil, err
-			}
+		if needUpdatePVC(oldPvc, newPvc) {
+
+			reqLogger.Error(err, "Updating PersistentVolumeClaim is not supported.")
+			return oldPvc, nil
+
 		}
 	}
 	return oldPvc, nil
 }
 
 func (r *CodeServerReconciler) reconcileForDeployment(codeServer *csv1alpha1.CodeServer) (*appsv1.Deployment, error) {
-	reqLogger := r.Log.WithValues("Request.Namespace", codeServer.Namespace, "Request.Name", codeServer.Name)
-	reqLogger.Info("Reconciling Deployment for code server.")
+	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
+	reqLogger.Info("Reconciling Deployment.")
 	//reconcile pvc for code server
 	newDev := r.deploymentForCodeServer(codeServer)
 	oldDev := &appsv1.Deployment{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, oldDev)
 	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a Deployment.", "Deployment.Namespace", codeServer.Namespace, "Deployment.Name", codeServer.Name)
+		reqLogger.Info("Creating a Deployment.")
 		err = r.Client.Create(context.TODO(), newDev)
 		if err != nil {
-			reqLogger.Error(err, "Failed to create Deployment.", "Deployment.Namespace", codeServer.Namespace, "Deployment.Name", codeServer.Name)
+			reqLogger.Error(err, "Failed to create Deployment.")
 			return nil, err
 		}
-	}else {
+	} else {
 		if err != nil {
 			//Reschedule the event
 			reqLogger.Error(err, fmt.Sprintf("Failed to get Deployment for %s.", codeServer.Name))
 			return nil, err
 		}
-		if !equality.Semantic.DeepEqual(oldDev.Spec, newDev.Spec){
+		if needUpdateDeployment(oldDev, newDev) {
 			oldDev.Spec = newDev.Spec
-			reqLogger.Info("Updating a Development.", "Deployment.Namespace", codeServer.Namespace, "Deployment.Name", codeServer.Name)
+			reqLogger.Info("Updating a Development.")
 			err = r.Client.Update(context.TODO(), oldDev)
 			if err != nil {
-				reqLogger.Error(err, "Failed to update Deployment.", "Deployment.Namespace", codeServer.Namespace, "Deployment.Name", codeServer.Name)
+				reqLogger.Error(err, "Failed to update Deployment.")
 				return nil, err
 			}
 		}
@@ -246,21 +247,21 @@ func (r *CodeServerReconciler) reconcileForDeployment(codeServer *csv1alpha1.Cod
 }
 
 func (r *CodeServerReconciler) reconcileForIngress(codeServer *csv1alpha1.CodeServer) (*extv1.Ingress, error) {
-	reqLogger := r.Log.WithValues("Request.Namespace", codeServer.Namespace, "Request.Name", codeServer.Name)
-	reqLogger.Info("Reconciling ingress for code server.")
+	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
+	reqLogger.Info("Reconciling.")
 	//reconcile ingress for code server
 	newIngress := r.ingressForCodeServer(codeServer)
 	oldIngress := &extv1.Ingress{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, oldIngress)
 	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a Ingress.", "Ingress.Namespace", codeServer.Namespace, "Ingress.Name", codeServer.Name)
+		reqLogger.Info("Creating a Ingress.")
 		err = r.Client.Create(context.TODO(), newIngress)
 		if err != nil {
-			reqLogger.Error(err, "Failed to create Ingress.", "Ingress.Namespace", codeServer.Namespace, "Ingress.Name", codeServer.Name)
+			reqLogger.Error(err, "Failed to create Ingress.")
 			return nil, err
 		}
 		// if update is required
-	}else {
+	} else {
 		if err != nil {
 			//Reschedule the event
 			reqLogger.Error(err, fmt.Sprintf("Failed to get Ingress for %s.", codeServer.Name))
@@ -268,10 +269,10 @@ func (r *CodeServerReconciler) reconcileForIngress(codeServer *csv1alpha1.CodeSe
 		}
 		if !equality.Semantic.DeepEqual(oldIngress.Spec, newIngress.Spec) {
 			oldIngress.Spec = newIngress.Spec
-			reqLogger.Info("Updating a Ingress.", "Ingress.Namespace", codeServer.Namespace, "Ingress.Name", codeServer.Name)
+			reqLogger.Info("Updating a Ingress.")
 			err = r.Client.Update(context.TODO(), oldIngress)
 			if err != nil {
-				reqLogger.Error(err, "Failed to update Ingress.", "Ingress.Namespace", codeServer.Namespace, "Ingress.Name", codeServer.Name)
+				reqLogger.Error(err, "Failed to update Ingress.")
 				return nil, err
 			}
 		}
@@ -280,32 +281,32 @@ func (r *CodeServerReconciler) reconcileForIngress(codeServer *csv1alpha1.CodeSe
 }
 
 func (r *CodeServerReconciler) reconcileForService(codeServer *csv1alpha1.CodeServer) (*corev1.Service, error) {
-	reqLogger := r.Log.WithValues("Request.Namespace", codeServer.Namespace, "Request.Name", codeServer.Name)
-	reqLogger.Info("Reconciling Service for code server.")
+	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
+	reqLogger.Info("Reconciling.")
 	//reconcile service for code server
 	newService := r.serviceForCodeServer(codeServer)
 	oldService := &corev1.Service{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, oldService)
 	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a Service.", "Service.Namespace", codeServer.Namespace, "Service.Name", codeServer.Name)
+		reqLogger.Info("Creating a Service.")
 		err = r.Client.Create(context.TODO(), newService)
 		if err != nil {
-			reqLogger.Error(err, "Failed to create Service.", "Service.Namespace", codeServer.Namespace, "Service.Name", codeServer.Name)
+			reqLogger.Error(err, "Failed to create Service.")
 			return nil, err
 		}
 		// if update is required
-	}else {
+	} else {
 		if err != nil {
 			//Reschedule the event
 			reqLogger.Error(err, fmt.Sprintf("Failed to get Service for %s.", codeServer.Name))
 			return nil, err
 		}
-		if !equality.Semantic.DeepEqual(oldService.Spec, newService.Spec) {
+		if needUpdateService(oldService, newService) {
 			oldService.Spec = newService.Spec
-			reqLogger.Info("Updating a Service.", "Service.Namespace", codeServer.Namespace, "Service.Name", codeServer.Name)
+			reqLogger.Info("Updating a Service.")
 			err = r.Client.Update(context.TODO(), oldService)
 			if err != nil {
-				reqLogger.Error(err, "Failed to update Service.", "Service.Namespace", codeServer.Namespace, "Service.Name", codeServer.Name)
+				reqLogger.Error(err, "Failed to update Service.")
 				return nil, err
 			}
 		}
@@ -322,11 +323,11 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 		Privileged: &enablePriviledge,
 	}
 	shareVolume := corev1.EmptyDirVolumeSource{
-		Medium:"",
-		SizeLimit:resourcev1.NewQuantity(500, ""),
+		Medium:    "",
+		SizeLimit: resourcev1.NewQuantity(500, ""),
 	}
 	dataVolume := corev1.PersistentVolumeClaimVolumeSource{
-		ClaimName: pvcNameForCodeServer(m),
+		ClaimName: m.Name,
 	}
 
 	dep := &appsv1.Deployment{
@@ -346,8 +347,8 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Image:   m.Spec.Image,
-							Name:    "code-server",
+							Image:           m.Spec.Image,
+							Name:            CSNAME,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env: []corev1.EnvVar{
 								{
@@ -355,15 +356,15 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 									Value: m.Spec.ServerCipher,
 								},
 							},
-							SecurityContext:&priviledged,
-							VolumeMounts:[]corev1.VolumeMount{
+							SecurityContext: &priviledged,
+							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      "/home/coder/.local/share/code-server",
-									MountPath: "code-server-share-dir",
+									MountPath: "/home/coder/.local/share/code-server",
+									Name:      "code-server-share-dir",
 								},
 								{
-									Name:      "/home/coder/project",
-									MountPath: "code-server-project-dir",
+									MountPath: "/home/coder/project",
+									Name:      "code-server-project-dir",
 								},
 							},
 							Ports: []corev1.ContainerPort{{
@@ -372,13 +373,13 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 							}},
 						},
 						{
-							Image:   "tommylike/code-server-exporter:0.0.1",
-							Name:    "status-exporter",
+							Image:           "tommylike/code-server-exporter:0.0.1",
+							Name:            "status-exporter",
 							ImagePullPolicy: corev1.PullIfNotPresent,
-							VolumeMounts:[]corev1.VolumeMount{
+							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      "/home/coder/.local/share/code-server",
-									MountPath: "code-server-share-dir",
+									MountPath: "/home/coder/.local/share/code-server",
+									Name:      "code-server-share-dir",
 								},
 							},
 							Env: []corev1.EnvVar{
@@ -397,7 +398,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 							}},
 						},
 					},
-					Volumes:[]corev1.Volume{
+					Volumes: []corev1.Volume{
 						{
 							Name: "code-server-share-dir",
 							VolumeSource: corev1.VolumeSource{
@@ -432,13 +433,15 @@ func (r *CodeServerReconciler) serviceForCodeServer(m *csv1alpha1.CodeServer) *c
 			Selector: ls,
 			Ports: []corev1.ServicePort{
 				{
-					Port: 80,
-					Name: "web-ui",
+					Port:       80,
+					Name:       "web-ui",
+					Protocol:   corev1.ProtocolTCP,
 					TargetPort: intstr.FromInt(8080),
 				},
 				{
-					Port: 8000,
-					Name: "web-status",
+					Port:       8000,
+					Name:       "web-status",
+					Protocol:   corev1.ProtocolTCP,
 					TargetPort: intstr.FromInt(8000),
 				},
 			},
@@ -452,7 +455,7 @@ func (r *CodeServerReconciler) serviceForCodeServer(m *csv1alpha1.CodeServer) *c
 // pvcForCodeServer function takes in a CodeServer object and returns a PersistentVolumeClaim for that object.
 func (r *CodeServerReconciler) pvcForCodeServer(m *csv1alpha1.CodeServer) (*corev1.PersistentVolumeClaim, error) {
 	pvcQuantity, err := resourcev1.ParseQuantity(m.Spec.VolumeSize)
-	if err != nil  {
+	if err != nil {
 		return nil, err
 	}
 	pvc := &corev1.PersistentVolumeClaim{
@@ -461,10 +464,10 @@ func (r *CodeServerReconciler) pvcForCodeServer(m *csv1alpha1.CodeServer) (*core
 			Namespace: m.Namespace,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			StorageClassName: &m.Spec.StorageClassName,
 			Resources: corev1.ResourceRequirements{
-				Requests:corev1.ResourceList{
+				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: pvcQuantity,
 				},
 			},
@@ -478,7 +481,7 @@ func (r *CodeServerReconciler) pvcForCodeServer(m *csv1alpha1.CodeServer) (*core
 // ingressForCodeServer function takes in a CodeServer object and returns a ingress for that object.
 func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer) *extv1.Ingress {
 	httpValue := extv1.HTTPIngressRuleValue{
-		Paths:[]extv1.HTTPIngressPath{
+		Paths: []extv1.HTTPIngressPath{
 			{
 				Path: fmt.Sprintf("/%s(/|$)(.*)", m.Spec.URL),
 				Backend: extv1.IngressBackend{
@@ -490,16 +493,16 @@ func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer) *e
 	}
 	ingress := &extv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.Name,
-			Namespace: m.Namespace,
+			Name:        m.Name,
+			Namespace:   m.Namespace,
 			Annotations: annotationsForIngress(m),
 		},
-		Spec:extv1.IngressSpec{
-			Rules:[]extv1.IngressRule{
+		Spec: extv1.IngressSpec{
+			Rules: []extv1.IngressRule{
 				{
 					//TODO: use configuration to setting this value
 					Host: "tommylike.me",
-					IngressRuleValue : extv1.IngressRuleValue{
+					IngressRuleValue: extv1.IngressRuleValue{
 						HTTP: &httpValue,
 					},
 				},
@@ -515,23 +518,17 @@ func annotationsForIngress(m *csv1alpha1.CodeServer) map[string]string {
 	snippet := fmt.Sprintf(`proxy_set_header Accept-Encoding '';
 sub_filter '<head>' '<head> <base href="/%s/">';`, m.Spec.URL)
 	return map[string]string{
-		"kubernetes.io/ingress.class": "nginx",
-		"nginx.ingress.kubernetes.io/use-regex": "true",
-		"nginx.ingress.kubernetes.io/rewrite-target": "/$2",
+		"kubernetes.io/ingress.class":                       "nginx",
+		"nginx.ingress.kubernetes.io/use-regex":             "true",
+		"nginx.ingress.kubernetes.io/rewrite-target":        "/$2",
 		"nginx.ingress.kubernetes.io/configuration-snippet": snippet,
 	}
 }
-
-
 
 // labelsForCodeServer returns the labels for selecting the resources
 // belonging to the given CodeServer name.
 func labelsForCodeServer(name string) map[string]string {
 	return map[string]string{"app": "codeserver", "cs_name": name}
-}
-
-func pvcNameForCodeServer(m *csv1alpha1.CodeServer) string {
-	return fmt.Sprintf("%s-pvc", m.Name)
 }
 
 // NewStateCondition creates a new code server condition.
@@ -608,7 +605,7 @@ func filterOutCondition(states *csv1alpha1.CodeServerStatus, currentCondition cs
 			break
 		}
 
-		if currentCondition.Type == csv1alpha1.ServerInactive || currentCondition.Type == csv1alpha1.ServerRecycled{
+		if currentCondition.Type == csv1alpha1.ServerInactive || currentCondition.Type == csv1alpha1.ServerRecycled {
 			if currentCondition.Status == corev1.ConditionTrue && condition.Type == csv1alpha1.ServerReady {
 				condition.Status = corev1.ConditionFalse
 				condition.LastUpdateTime = metav1.Now()
@@ -624,6 +621,30 @@ func filterOutCondition(states *csv1alpha1.CodeServerStatus, currentCondition cs
 		newConditions = append(newConditions, condition)
 	}
 	return newConditions
+}
+
+func needUpdatePVC(old, new *corev1.PersistentVolumeClaim) bool {
+	return *old.Spec.StorageClassName != *new.Spec.StorageClassName ||
+		!equality.Semantic.DeepEqual(old.Spec.Resources, new.Spec.Resources)
+}
+
+func needUpdateService(old, new *corev1.Service) bool {
+	return !equality.Semantic.DeepEqual(old.Spec.Ports, new.Spec.Ports) ||
+		!equality.Semantic.DeepEqual(old.Spec.Selector, new.Spec.Selector)
+}
+
+func getCodeServerImage(containers []corev1.Container) string {
+	for _, c := range containers {
+		if c.Name == CSNAME {
+			return c.Image
+		}
+	}
+	return ""
+}
+
+func needUpdateDeployment(old, new *appsv1.Deployment) bool {
+	return !equality.Semantic.DeepEqual(old.Spec.Template.Spec.Volumes, new.Spec.Template.Spec.Volumes) ||
+		getCodeServerImage(old.Spec.Template.Spec.Containers) != getCodeServerImage(new.Spec.Template.Spec.Containers)
 }
 
 func (r *CodeServerReconciler) SetupWithManager(mgr ctrl.Manager) error {
