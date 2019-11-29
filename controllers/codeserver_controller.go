@@ -51,11 +51,15 @@ type CodeServerReconciler struct {
 
 // +kubebuilder:rbac:groups=cs.tommylike.com,resources=codeservers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cs.tommylike.com,resources=codeservers/status,verbs=get;update;patch
-
+// +kubebuilder:rbac:groups=,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=,resources=events,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=extensions,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 	_ = context.Background()
 	reqLogger := r.Log.WithValues("codeserver", req.NamespacedName)
-
 	// Fetch the CodeServer instance
 	codeServer := &csv1alpha1.CodeServer{}
 	err := r.Client.Get(context.TODO(), req.NamespacedName, codeServer)
@@ -650,7 +654,9 @@ func needUpdateDeployment(old, new *appsv1.Deployment) bool {
 }
 
 func (r *CodeServerReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	//watch codeserver, server, ingress, pvc and deployment.
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&csv1alpha1.CodeServer{}).
+		For(&csv1alpha1.CodeServer{}).Owns(&corev1.Service{}).
+		Owns(&extv1.Ingress{}).Owns(&appsv1.Deployment{}).Owns(&corev1.PersistentVolumeClaim{}).
 		Complete(r)
 }
