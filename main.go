@@ -100,11 +100,11 @@ func main() {
 	}
 	csRequest := make(chan controllers.CodeServerRequest, REQUEST_CHAN_SIZE)
 	if err = (&controllers.CodeServerReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("CodeServer"),
-		Scheme: mgr.GetScheme(),
+		Client:  mgr.GetClient(),
+		Log:     ctrl.Log.WithName("controllers").WithName("CodeServer"),
+		Scheme:  mgr.GetScheme(),
 		Options: &csOption,
-		ReqCh: csRequest,
+		ReqCh:   csRequest,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "CodeServer")
 		os.Exit(1)

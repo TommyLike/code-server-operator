@@ -54,7 +54,6 @@ const (
 	ServerRecycled ServerConditionType = "ServerRecycled"
 	// ServerInactive means the code server will be recycled if `RecycleAfterSeconds` elapsed
 	ServerInactive ServerConditionType = "ServerInactive"
-
 )
 
 // ServerCondition describes the state of the code server at a certain point.

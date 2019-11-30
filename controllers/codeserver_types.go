@@ -18,10 +18,10 @@ package controllers
 
 import (
 	"k8s.io/apimachinery/pkg/types"
-	)
+)
 
 type CodeServerOption struct {
-	DomainName	string
+	DomainName    string
 	ExporterImage string
 	ProbeInterval int
 	MaxProbeRetry int
@@ -30,14 +30,13 @@ type CodeServerOption struct {
 type WatchType string
 
 const (
-	AddWatch WatchType = "Add"
+	AddWatch    WatchType = "Add"
 	DeleteWatch WatchType = "Delete"
-
 )
 
 type CodeServerRequest struct {
 	resource types.NamespacedName
 	duration int64
-	operate WatchType
+	operate  WatchType
 	endpoint string
 }

@@ -45,10 +45,10 @@ const (
 // CodeServerReconciler reconciles a CodeServer object
 type CodeServerReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Log     logr.Logger
+	Scheme  *runtime.Scheme
 	Options *CodeServerOption
-	ReqCh chan CodeServerRequest
+	ReqCh   chan CodeServerRequest
 }
 
 // +kubebuilder:rbac:groups=cs.tommylike.com,resources=codeservers,verbs=get;list;watch;create;update;patch;delete
@@ -119,12 +119,12 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		}
 		readyCondition := NewStateCondition(csv1alpha1.ServerReady,
 			"code server now available", "")
-		if !HasDeploymentCondition(dep.Status, appsv1.DeploymentAvailable){
+		if !HasDeploymentCondition(dep.Status, appsv1.DeploymentAvailable) {
 			readyCondition.Status = corev1.ConditionFalse
 			readyCondition.Reason = "waiting deployment to be available"
 		} else {
 			//add it to watch list
-			endPoint := fmt.Sprintf("http://%s:%s/mtime",service.Spec.ClusterIP, "8000")
+			endPoint := fmt.Sprintf("http://%s:%s/mtime", service.Spec.ClusterIP, "8000")
 			r.addToWatch(req.NamespacedName, *codeServer.Spec.RecycleAfterSeconds, endPoint)
 		}
 		SetCondition(&codeServer.Status, readyCondition)
@@ -140,9 +140,9 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 
 func (r *CodeServerReconciler) addToWatch(resource types.NamespacedName, duration int64, endpoint string) {
 	request := CodeServerRequest{
-		resource:resource,
-		duration:duration,
-		operate:AddWatch,
+		resource: resource,
+		duration: duration,
+		operate:  AddWatch,
 		endpoint: endpoint,
 	}
 	r.ReqCh <- request
@@ -151,11 +151,10 @@ func (r *CodeServerReconciler) addToWatch(resource types.NamespacedName, duratio
 func (r *CodeServerReconciler) deleteFromWatch(resource types.NamespacedName) {
 	request := CodeServerRequest{
 		resource: resource,
-		operate:DeleteWatch,
+		operate:  DeleteWatch,
 	}
 	r.ReqCh <- request
 }
-
 
 func (r *CodeServerReconciler) deleteCodeServerResource(name, namespace string, includePVC bool) error {
 	reqLogger := r.Log.WithValues("namespace", name, "name", namespace)

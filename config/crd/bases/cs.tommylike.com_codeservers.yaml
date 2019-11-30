@@ -34,13 +34,80 @@ spec:
         spec:
           description: CodeServerSpec defines the desired state of CodeServer
           properties:
-            foo:
-              description: Foo is an example field of CodeServer. Edit CodeServer_types.go
-                to remove/update
+            image:
+              description: Specifies the image used to running code server
+              type: string
+            recycleAfterSeconds:
+              description: Specifies the period before controller recycle the resource.
+              format: int64
+              type: integer
+            resources:
+              description: Specifies the resource requirements for code server pod.
+              properties:
+                limits:
+                  additionalProperties:
+                    type: string
+                  description: 'Limits describes the maximum amount of compute resources
+                    allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                  type: object
+                requests:
+                  additionalProperties:
+                    type: string
+                  description: 'Requests describes the minimum amount of compute resources
+                    required. If Requests is omitted for a container, it defaults
+                    to Limits if that is explicitly specified, otherwise to an implementation-defined
+                    value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
+                  type: object
+              type: object
+            serverCipher:
+              description: Specifies the cipher for coder server login
+              type: string
+            storageClassName:
+              description: Specifies the storage class name for the persistent volume
+              type: string
+            url:
+              description: Specifies the url for website visiting
+              type: string
+            volumeSize:
+              description: Specifies the volume size that will be used for code server
               type: string
           type: object
         status:
           description: CodeServerStatus defines the observed state of CodeServer
+          properties:
+            conditions:
+              description: Server conditions
+              items:
+                description: ServerCondition describes the state of the code server
+                  at a certain point.
+                properties:
+                  lastTransitionTime:
+                    description: Last time the condition transitioned from one status
+                      to another.
+                    format: date-time
+                    type: string
+                  lastUpdateTime:
+                    description: The last time this condition was updated.
+                    format: date-time
+                    type: string
+                  message:
+                    description: A human readable message indicating details about
+                      the transition.
+                    type: string
+                  reason:
+                    description: The reason for the condition's last transition.
+                    type: string
+                  status:
+                    description: Status of the condition, one of True, False, Unknown.
+                    type: string
+                  type:
+                    description: Type of code server condition.
+                    type: string
+                required:
+                - status
+                - type
+                type: object
+              type: array
           type: object
       type: object
   version: v1alpha1
