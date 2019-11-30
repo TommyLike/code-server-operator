@@ -47,6 +47,8 @@ type CodeServerReconciler struct {
 	client.Client
 	Log    logr.Logger
 	Scheme *runtime.Scheme
+	Options *CodeServerOption
+	ReqCh chan CodeServerRequest
 }
 
 // +kubebuilder:rbac:groups=cs.tommylike.com,resources=codeservers,verbs=get;list;watch;create;update;patch;delete
@@ -76,11 +78,15 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		return reconcile.Result{}, err
 	}
 
-	if HasCondition(codeServer.Status, csv1alpha1.ServerInactive) {
+	if HasCondition(codeServer.Status, csv1alpha1.ServerInactive) && !HasCondition(codeServer.Status, csv1alpha1.ServerRecycled) {
+		//remove it from watch list
+		r.deleteFromWatch(req.NamespacedName)
 		if err := r.deleteCodeServerResource(codeServer.Name, codeServer.Namespace, false); err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
 	} else if HasCondition(codeServer.Status, csv1alpha1.ServerRecycled) {
+		//remove it from watch list
+		r.deleteFromWatch(req.NamespacedName)
 		if err := r.deleteCodeServerResource(codeServer.Name, codeServer.Namespace, true); err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
@@ -96,7 +102,7 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 			return reconcile.Result{Requeue: true}, err
 		}
 		// 3/5: reconcile service
-		_, err = r.reconcileForService(codeServer)
+		service, err := r.reconcileForService(codeServer)
 		if err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
@@ -111,11 +117,18 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 				"code server has been accepted", "")
 			SetCondition(&codeServer.Status, createdCondition)
 		}
-		if HasDeploymentCondition(dep.Status, appsv1.DeploymentAvailable) && !HasCondition(codeServer.Status, csv1alpha1.ServerReady) {
-			createdCondition := NewStateCondition(csv1alpha1.ServerReady,
-				"code server now available", "")
-			SetCondition(&codeServer.Status, createdCondition)
+		readyCondition := NewStateCondition(csv1alpha1.ServerReady,
+			"code server now available", "")
+		if !HasDeploymentCondition(dep.Status, appsv1.DeploymentAvailable){
+			readyCondition.Status = corev1.ConditionFalse
+			readyCondition.Reason = "waiting deployment to be available"
+		} else {
+			//add it to watch list
+			endPoint := fmt.Sprintf("http://%s:%s/mtime",service.Spec.ClusterIP, "8000")
+			r.addToWatch(req.NamespacedName, *codeServer.Spec.RecycleAfterSeconds, endPoint)
 		}
+		SetCondition(&codeServer.Status, readyCondition)
+
 		err = r.Client.Update(context.TODO(), codeServer)
 		if err != nil {
 			reqLogger.Error(err, "Failed to update code server status.")
@@ -124,6 +137,25 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 	}
 	return reconcile.Result{}, nil
 }
+
+func (r *CodeServerReconciler) addToWatch(resource types.NamespacedName, duration int64, endpoint string) {
+	request := CodeServerRequest{
+		resource:resource,
+		duration:duration,
+		operate:AddWatch,
+		endpoint: endpoint,
+	}
+	r.ReqCh <- request
+}
+
+func (r *CodeServerReconciler) deleteFromWatch(resource types.NamespacedName) {
+	request := CodeServerRequest{
+		resource: resource,
+		operate:DeleteWatch,
+	}
+	r.ReqCh <- request
+}
+
 
 func (r *CodeServerReconciler) deleteCodeServerResource(name, namespace string, includePVC bool) error {
 	reqLogger := r.Log.WithValues("namespace", name, "name", namespace)
@@ -254,7 +286,7 @@ func (r *CodeServerReconciler) reconcileForDeployment(codeServer *csv1alpha1.Cod
 
 func (r *CodeServerReconciler) reconcileForIngress(codeServer *csv1alpha1.CodeServer) (*extv1.Ingress, error) {
 	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
-	reqLogger.Info("Reconciling.")
+	reqLogger.Info("Reconciling ingress.")
 	//reconcile ingress for code server
 	newIngress := r.ingressForCodeServer(codeServer)
 	oldIngress := &extv1.Ingress{}
@@ -288,7 +320,7 @@ func (r *CodeServerReconciler) reconcileForIngress(codeServer *csv1alpha1.CodeSe
 
 func (r *CodeServerReconciler) reconcileForService(codeServer *csv1alpha1.CodeServer) (*corev1.Service, error) {
 	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
-	reqLogger.Info("Reconciling.")
+	reqLogger.Info("Reconciling service.")
 	//reconcile service for code server
 	newService := r.serviceForCodeServer(codeServer)
 	oldService := &corev1.Service{}
@@ -328,9 +360,10 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 	priviledged := corev1.SecurityContext{
 		Privileged: &enablePriviledge,
 	}
+	shareQuantity, _ := resourcev1.ParseQuantity("500M")
 	shareVolume := corev1.EmptyDirVolumeSource{
 		Medium:    "",
-		SizeLimit: resourcev1.NewQuantity(500, ""),
+		SizeLimit: &shareQuantity,
 	}
 	dataVolume := corev1.PersistentVolumeClaimVolumeSource{
 		ClaimName: m.Name,
@@ -379,7 +412,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 							}},
 						},
 						{
-							Image:           "tommylike/code-server-exporter:0.0.1",
+							Image:           r.Options.ExporterImage,
 							Name:            "status-exporter",
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							VolumeMounts: []corev1.VolumeMount{
@@ -506,8 +539,7 @@ func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer) *e
 		Spec: extv1.IngressSpec{
 			Rules: []extv1.IngressRule{
 				{
-					//TODO: use configuration to setting this value
-					Host: "tommylike.me",
+					Host: r.Options.DomainName,
 					IngressRuleValue: extv1.IngressRuleValue{
 						HTTP: &httpValue,
 					},

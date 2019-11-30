@@ -19,6 +19,9 @@ package main
 import (
 	"flag"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	csv1alpha1 "github.com/tommylike/code-server-operator/api/v1alpha1"
 	"github.com/tommylike/code-server-operator/controllers"
@@ -35,6 +38,10 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+const (
+	REQUEST_CHAN_SIZE = 10
+)
+
 func init() {
 	_ = clientgoscheme.AddToScheme(scheme)
 
@@ -42,12 +49,39 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
+var onlyOneSignalHandler = make(chan struct{})
+var shutdownSignals = []os.Signal{os.Interrupt, syscall.SIGTERM}
+
+func SetupSignalHandler() (stopCh <-chan struct{}) {
+	close(onlyOneSignalHandler) // panics when called twice
+
+	stop := make(chan struct{})
+	c := make(chan os.Signal, 2)
+	signal.Notify(c, shutdownSignals...)
+	go func() {
+		<-c
+		close(stop)
+		<-c
+		os.Exit(1) // second signal. Exit directly.
+	}()
+
+	return stop
+}
+
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
+	csOption := controllers.CodeServerOption{}
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
+	flag.StringVar(&csOption.DomainName, "domain-name", "tommylike.me", "Code server domain name.")
+	flag.StringVar(&csOption.ExporterImage, "default-exporter", "tommylike/code-server-exporter:0.0.1",
+		"Default exporter image used as a code server sidecar.")
+	flag.IntVar(&csOption.ProbeInterval, "probe-interval", 20,
+		"time in seconds between two probes on code server.")
+	flag.IntVar(&csOption.MaxProbeRetry, "max-probe-retry", 3,
+		"count before marking code server inactive when failed to probe liveness")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(func(o *zap.Options) {
@@ -64,19 +98,33 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
+	csRequest := make(chan controllers.CodeServerRequest, REQUEST_CHAN_SIZE)
 	if err = (&controllers.CodeServerReconciler{
 		Client: mgr.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("CodeServer"),
 		Scheme: mgr.GetScheme(),
+		Options: &csOption,
+		ReqCh: csRequest,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "CodeServer")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+	probeTicker := time.NewTicker(time.Duration(csOption.ProbeInterval) * time.Second)
+	defer probeTicker.Stop()
+	//setup code server watcher
+	codeServerWatcher := controllers.NewCodeServerWatcher(
+		mgr.GetClient(),
+		ctrl.Log.WithName("controllers").WithName("CodeServerWatcher"),
+		mgr.GetScheme(),
+		&csOption,
+		csRequest,
+		probeTicker.C)
+	stopCh := ctrl.SetupSignalHandler()
+	go codeServerWatcher.Run(stopCh)
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(stopCh); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
