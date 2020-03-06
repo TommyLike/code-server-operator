@@ -91,6 +91,11 @@ func (in *CodeServerSpec) DeepCopyInto(out *CodeServerSpec) {
 		*out = new(int64)
 		**out = **in
 	}
+	if in.RecycleAfterSeconds != nil {
+		in, out := &in.RecycleAfterSeconds, &out.RecycleAfterSeconds
+		*out = new(int64)
+		**out = **in
+	}
 	in.Resources.DeepCopyInto(&out.Resources)
 }
 
