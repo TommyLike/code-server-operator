@@ -11,6 +11,6 @@ spec:
   recycleAfterSeconds: 1200
   resources:
     requests:
-      cpu: "1"
-      memory: "1024m"
+      cpu: "2"
+      memory: "2048m"
   serverCipher: "1234"
