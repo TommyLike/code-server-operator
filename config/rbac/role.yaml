@@ -26,3 +26,42 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+    - ""
+  resources:
+    - services
+    - events
+    - persistentvolumeclaims
+  verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+- apiGroups:
+    - extensions
+  resources:
+    - deployments
+    - ingresses
+  verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch
+- apiGroups:
+    - apps
+  resources:
+    - deployments
+  verbs:
+    - create
+    - delete
+    - get
+    - list
+    - patch
+    - update
+    - watch

@@ -367,6 +367,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 	dataVolume := corev1.PersistentVolumeClaimVolumeSource{
 		ClaimName: m.Name,
 	}
+	command := []string{"dumb-init", "code-server", "--host", "0.0.0.0", "--base-path", fmt.Sprintf("/%s", m.Spec.URL)}
 
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -394,6 +395,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 									Value: m.Spec.ServerCipher,
 								},
 							},
+							Command:command,
 							SecurityContext: &priviledged,
 							VolumeMounts: []corev1.VolumeMount{
 								{

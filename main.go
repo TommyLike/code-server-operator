@@ -75,7 +75,7 @@ func main() {
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "The address the metric endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
-	flag.StringVar(&csOption.DomainName, "domain-name", "tommylike.me", "Code server domain name.")
+	flag.StringVar(&csOption.DomainName, "domain-name", "code.tommylike.me", "Code server domain name.")
 	flag.StringVar(&csOption.ExporterImage, "default-exporter", "tommylike/code-server-exporter:0.0.1",
 		"Default exporter image used as a code server sidecar.")
 	flag.IntVar(&csOption.ProbeInterval, "probe-interval", 20,
