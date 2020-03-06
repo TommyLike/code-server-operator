@@ -78,9 +78,9 @@ func main() {
 	flag.StringVar(&csOption.DomainName, "domain-name", "code.tommylike.me", "Code server domain name.")
 	flag.StringVar(&csOption.ExporterImage, "default-exporter", "tommylike/code-server-exporter:0.0.1",
 		"Default exporter image used as a code server sidecar.")
-	flag.IntVar(&csOption.ProbeInterval, "probe-interval", 10,
-		"time in minutes between two probes on code server instance.")
-	flag.IntVar(&csOption.MaxProbeRetry, "max-probe-retry", 3,
+	flag.IntVar(&csOption.ProbeInterval, "probe-interval", 20,
+		"time in seconds between two probes on code server instance.")
+	flag.IntVar(&csOption.MaxProbeRetry, "max-probe-retry", 4,
 		"count before marking code server inactive when failed to probe liveness")
 	flag.Parse()
 
@@ -110,7 +110,7 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
-	probeTicker := time.NewTicker(time.Duration(csOption.ProbeInterval) * time.Minute)
+	probeTicker := time.NewTicker(time.Duration(csOption.ProbeInterval) * time.Second)
 	defer probeTicker.Stop()
 	//setup code server watcher
 	codeServerWatcher := controllers.NewCodeServerWatcher(
