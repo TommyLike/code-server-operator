@@ -40,6 +40,8 @@ import (
 
 const (
 	CSNAME = "code-server"
+	MaxActiveSeconds = 60 * 60 * 24
+	MaxKeepSeconds =  60 * 60 * 24 * 30
 )
 
 // CodeServerReconciler reconciles a CodeServer object
@@ -85,7 +87,12 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		//remove it from watch list and add it to recycle watch
 		r.deleteFromInactiveWatch(req.NamespacedName)
 		inActiveCondition := GetCondition(codeServer.Status, csv1alpha1.ServerInactive)
-		r.addToRecycleWatch(req.NamespacedName, *codeServer.Spec.RecycleAfterSeconds, inActiveCondition.LastTransitionTime)
+		if (codeServer.Spec.RecycleAfterSeconds == nil) || *codeServer.Spec.RecycleAfterSeconds <= 0 || *codeServer.Spec.RecycleAfterSeconds >= MaxKeepSeconds {
+			// we keep the instance within MaxKeepSeconds maximumly
+			r.addToRecycleWatch(req.NamespacedName, MaxKeepSeconds, inActiveCondition.LastTransitionTime)
+		}else{
+			r.addToRecycleWatch(req.NamespacedName, *codeServer.Spec.RecycleAfterSeconds, inActiveCondition.LastTransitionTime)
+		}
 		if err := r.deleteCodeServerResource(codeServer.Name, codeServer.Namespace, false); err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
@@ -132,7 +139,13 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		} else {
 			//add it to watch list
 			endPoint := fmt.Sprintf("http://%s:%s/mtime", service.Spec.ClusterIP, "8000")
-			r.addToInactiveWatch(req.NamespacedName, *codeServer.Spec.InactiveAfterSeconds, endPoint)
+			if (codeServer.Spec.InactiveAfterSeconds == nil) || *codeServer.Spec.InactiveAfterSeconds <= 0 || *codeServer.Spec.InactiveAfterSeconds >= MaxActiveSeconds {
+				// we keep the instance within MaxActiveSeconds maximumly
+				r.addToInactiveWatch(req.NamespacedName, MaxActiveSeconds, endPoint)
+			}else{
+				r.addToInactiveWatch(req.NamespacedName, *codeServer.Spec.InactiveAfterSeconds, endPoint)
+			}
+
 		}
 		SetCondition(&codeServer.Status, readyCondition)
 		err = r.Client.Get(context.TODO(), req.NamespacedName, codeServer)

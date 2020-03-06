@@ -1,13 +1,14 @@
 apiVersion: cs.tommylike.com/v1alpha1
 kind: CodeServer
 metadata:
-  name: codeserver-sample
+  name: codeserver-fred
 spec:
-  url: codeserversample
+  url: codeserverfred
   image: "codercom/code-server:v2"
   volumeSize: "200m"
   storageClassName: "local-nfs"
-  recycleAfterSeconds: 100
+  inactiveAfterSeconds: 600
+  recycleAfterSeconds: 1200
   resources:
     requests:
       cpu: "1"

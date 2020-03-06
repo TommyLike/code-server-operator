@@ -1,0 +1,16 @@
+apiVersion: cs.tommylike.com/v1alpha1
+kind: CodeServer
+metadata:
+  name: codeserver-tommy
+spec:
+  url: codeservertommy
+  image: "codercom/code-server:v2"
+  volumeSize: "200m"
+  storageClassName: "local-nfs"
+  inactiveAfterSeconds: 600
+  recycleAfterSeconds: 1200
+  resources:
+    requests:
+      cpu: "1"
+      memory: "1024m"
+  serverCipher: "1234"
