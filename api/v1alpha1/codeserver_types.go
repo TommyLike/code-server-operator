@@ -30,16 +30,18 @@ type CodeServerSpec struct {
 	VolumeSize string `json:"volumeSize,omitempty" protobuf:"bytes,2,opt,name=volumeSize"`
 	// Specifies the storage class name for the persistent volume
 	StorageClassName string `json:"storageClassName,omitempty" protobuf:"bytes,3,opt,name=storageClassName"`
-	// Specifies the period before controller recycle the resource.
-	RecycleAfterSeconds *int64 `json:"recycleAfterSeconds,omitempty" protobuf:"bytes,4,opt,name=recycleAfterSeconds"`
+	// Specifies the period before controller inactive the resource (delete all resources except volume).
+	InactiveAfterSeconds *int64 `json:"inactiveAfterSeconds,omitempty" protobuf:"bytes,4,opt,name=inactiveAfterSeconds"`
+	// Specifies the period before controller recycle the resource (delete all resources).
+	RecycleAfterSeconds *int64 `json:"recycleAfterSeconds,omitempty" protobuf:"bytes,5,opt,name=recycleAfterSeconds"`
 	// Specifies the resource requirements for code server pod.
-	Resources v1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,5,opt,name=resources"`
+	Resources v1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,6,opt,name=resources"`
 	// Specifies the cipher for coder server login
-	ServerCipher string `json:"serverCipher,omitempty" protobuf:"bytes,6,opt,name=serverCipher"`
+	ServerCipher string `json:"serverCipher,omitempty" protobuf:"bytes,7,opt,name=serverCipher"`
 	// Specifies the url for website visiting
-	URL string `json:"url,omitempty" protobuf:"bytes,7,opt,name=url"`
+	URL string `json:"url,omitempty" protobuf:"bytes,8,opt,name=url"`
 	// Specifies the image used to running code server
-	Image string `json:"image,omitempty" protobuf:"bytes,7,opt,name=image"`
+	Image string `json:"image,omitempty" protobuf:"bytes,9,opt,name=image"`
 }
 
 // ServerConditionType describes the type of state of code server condition
@@ -50,9 +52,9 @@ const (
 	ServerCreated ServerConditionType = "ServerCreated"
 	// ServerReady means the code server has been ready for usage.
 	ServerReady ServerConditionType = "ServerReady"
-	// ServerRecycled means the code server has been recycled.
+	// ServerRecycled means the code server has been recycled totally.
 	ServerRecycled ServerConditionType = "ServerRecycled"
-	// ServerInactive means the code server will be recycled if `RecycleAfterSeconds` elapsed
+	// ServerInactive means the code server will be marked inactive if `InactiveAfterSeconds` elapsed
 	ServerInactive ServerConditionType = "ServerInactive"
 )
 

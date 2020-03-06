@@ -23,7 +23,7 @@ import (
 
 type CodeServerActiveCache struct {
 	sync.RWMutex
-	Caches map[string]CodeServerActiveStatus
+	InactiveCaches map[string]CodeServerActiveStatus
 }
 
 type CodeServerActiveStatus struct {
@@ -36,11 +36,11 @@ type CodeServerActiveStatus struct {
 func (c *CodeServerActiveCache) AddOrUpdate(req CodeServerRequest) {
 	c.Lock()
 	defer c.Unlock()
-	if obj, found := c.Caches[req.resource.String()]; found {
+	if obj, found := c.InactiveCaches[req.resource.String()]; found {
 		obj.Duration = req.duration
 		obj.ProbeEndpoint = req.endpoint
 	} else {
-		c.Caches[req.resource.String()] = CodeServerActiveStatus{
+		c.InactiveCaches[req.resource.String()] = CodeServerActiveStatus{
 			ProbeEndpoint:  req.endpoint,
 			Duration:       req.duration,
 			FailureCount:   0,
@@ -52,30 +52,30 @@ func (c *CodeServerActiveCache) AddOrUpdate(req CodeServerRequest) {
 func (c *CodeServerActiveCache) Delete(req CodeServerRequest) {
 	c.Lock()
 	defer c.Unlock()
-	if _, found := c.Caches[req.resource.String()]; found {
-		delete(c.Caches, req.resource.String())
+	if _, found := c.InactiveCaches[req.resource.String()]; found {
+		delete(c.InactiveCaches, req.resource.String())
 	}
 }
 
 func (c *CodeServerActiveCache) DeleteFromName(req types.NamespacedName) {
 	c.Lock()
 	defer c.Unlock()
-	if _, found := c.Caches[req.String()]; found {
-		delete(c.Caches, req.String())
+	if _, found := c.InactiveCaches[req.String()]; found {
+		delete(c.InactiveCaches, req.String())
 	}
 }
 
 func (c *CodeServerActiveCache) BumpFailureCount(key string) {
 	c.Lock()
 	defer c.Unlock()
-	if obj, found := c.Caches[key]; found {
+	if obj, found := c.InactiveCaches[key]; found {
 		obj.FailureCount += 1
 	}
 }
 func (c *CodeServerActiveCache) Get(key string) *CodeServerActiveStatus {
 	c.RLock()
 	defer c.RUnlock()
-	if obj, found := c.Caches[key]; found {
+	if obj, found := c.InactiveCaches[key]; found {
 		return &obj
 	}
 	return nil
@@ -85,7 +85,7 @@ func (c *CodeServerActiveCache) GetKeys() []string {
 	var result []string
 	c.RLock()
 	defer c.RUnlock()
-	for k := range c.Caches {
+	for k := range c.InactiveCaches {
 		result = append(result, k)
 	}
 	return result

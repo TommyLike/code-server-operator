@@ -26,92 +26,25 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"net/http"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sync"
+	"strings"
+
 	"time"
 
 	csv1alpha1 "github.com/tommylike/code-server-operator/api/v1alpha1"
 )
 
-type CodeServerCache struct {
-	sync.RWMutex
-	Caches map[string]CodeServerStatus
-}
-
-type CodeServerStatus struct {
-	ProbeEndpoint  string
-	Duration       int64
-	FailureCount   int
-	NamespacedName types.NamespacedName
-}
-
-func (c *CodeServerCache) AddOrUpdate(req CodeServerRequest) {
-	c.Lock()
-	defer c.Unlock()
-	if obj, found := c.Caches[req.resource.String()]; found {
-		obj.Duration = req.duration
-		obj.ProbeEndpoint = req.endpoint
-	} else {
-		c.Caches[req.resource.String()] = CodeServerStatus{
-			ProbeEndpoint:  req.endpoint,
-			Duration:       req.duration,
-			FailureCount:   0,
-			NamespacedName: req.resource,
-		}
-	}
-}
-
-func (c *CodeServerCache) Delete(req CodeServerRequest) {
-	c.Lock()
-	defer c.Unlock()
-	if _, found := c.Caches[req.resource.String()]; found {
-		delete(c.Caches, req.resource.String())
-	}
-}
-
-func (c *CodeServerCache) DeleteFromName(req types.NamespacedName) {
-	c.Lock()
-	defer c.Unlock()
-	if _, found := c.Caches[req.String()]; found {
-		delete(c.Caches, req.String())
-	}
-}
-
-func (c *CodeServerCache) BumpFailureCount(key string) {
-	c.Lock()
-	defer c.Unlock()
-	if obj, found := c.Caches[key]; found {
-		obj.FailureCount += 1
-	}
-}
-func (c *CodeServerCache) Get(key string) *CodeServerStatus {
-	c.RLock()
-	defer c.RUnlock()
-	if obj, found := c.Caches[key]; found {
-		return &obj
-	}
-	return nil
-}
-
-func (c *CodeServerCache) GetKeys() []string {
-	var result []string
-	c.RLock()
-	defer c.RUnlock()
-	for k := range c.Caches {
-		result = append(result, k)
-	}
-	return result
-
-}
+const TimeLayout = "2006-01-02T15:04:05.000Z"
 
 // CodeServerWatcher watches all living code server
 type CodeServerWatcher struct {
 	client.Client
-	Log     logr.Logger
-	Scheme  *runtime.Scheme
-	Options *CodeServerOption
-	reqCh   <-chan CodeServerRequest
-	probeCh <-chan time.Time
-	cache   *CodeServerCache
+	Log           logr.Logger
+	Scheme        *runtime.Scheme
+	Options       *CodeServerOption
+	reqCh         <-chan CodeServerRequest
+	probeCh       <-chan time.Time
+	inActiveCache *CodeServerActiveCache
+	recyclCache   *CodeServerRecycleCache
 }
 
 func (cs *CodeServerWatcher) inActiveCodeServer(req types.NamespacedName) {
@@ -123,22 +56,45 @@ func (cs *CodeServerWatcher) inActiveCodeServer(req types.NamespacedName) {
 			reqLogger.Info("CodeServer has been deleted. Ignore inactive code server.")
 			return
 		}
-		if !HasCondition(codeServer.Status, csv1alpha1.ServerInactive) && !HasCondition(codeServer.Status, csv1alpha1.ServerRecycled) {
-			inactiveCondition := NewStateCondition(csv1alpha1.ServerInactive,
-				"code server has been marked inactive", "")
-			SetCondition(&codeServer.Status, inactiveCondition)
-			err := cs.Client.Update(context.TODO(), codeServer)
-			if err != nil {
-				reqLogger.Error(err, "Failed to update code server status.")
-			}
+	}
+	if !HasCondition(codeServer.Status, csv1alpha1.ServerInactive) && !HasCondition(codeServer.Status, csv1alpha1.ServerRecycled) {
+		inactiveCondition := NewStateCondition(csv1alpha1.ServerInactive,
+			"code server has been marked inactive", "")
+		SetCondition(&codeServer.Status, inactiveCondition)
+		err := cs.Client.Update(context.TODO(), codeServer)
+		if err != nil {
+			reqLogger.Error(err, "Failed to update code server status.")
+		}
+	}
+}
+
+func (cs *CodeServerWatcher) recycleCodeServer(req types.NamespacedName) {
+	reqLogger := cs.Log.WithValues("codeserverwatcher", req)
+	codeServer := &csv1alpha1.CodeServer{}
+	err := cs.Client.Get(context.TODO(), req, codeServer)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			reqLogger.Info("CodeServer has been deleted. Ignore recycle code server.")
+			return
+		}
+	}
+	if !HasCondition(codeServer.Status, csv1alpha1.ServerRecycled) {
+		recycleCondition := NewStateCondition(csv1alpha1.ServerRecycled,
+			"code server has been marked recycled", "")
+		SetCondition(&codeServer.Status, recycleCondition)
+		err := cs.Client.Update(context.TODO(), codeServer)
+		if err != nil {
+			reqLogger.Error(err, "Failed to update code server status.")
 		}
 	}
 }
 
 func NewCodeServerWatcher(client client.Client, log logr.Logger, schema *runtime.Scheme,
 	options *CodeServerOption, reqCh <-chan CodeServerRequest, probeCh <-chan time.Time) *CodeServerWatcher {
-	cache := CodeServerCache{}
-	cache.Caches = make(map[string]CodeServerStatus)
+	cache := CodeServerActiveCache{}
+	cache.InactiveCaches = make(map[string]CodeServerActiveStatus)
+	recycleCache := CodeServerRecycleCache{}
+	recycleCache.Caches = make(map[string]CodeServerRecycleStatus)
 	return &CodeServerWatcher{
 		client,
 		log,
@@ -147,6 +103,7 @@ func NewCodeServerWatcher(client client.Client, log logr.Logger, schema *runtime
 		reqCh,
 		probeCh,
 		&cache,
+		&recycleCache,
 	}
 }
 
@@ -155,23 +112,42 @@ func (cs *CodeServerWatcher) Run(stopCh <-chan struct{}) {
 		select {
 		case event := <-cs.reqCh:
 			switch event.operate {
-			case AddWatch:
-				cs.cache.AddOrUpdate(event)
-			case DeleteWatch:
-				cs.cache.Delete(event)
+			case AddInactiveWatch:
+				cs.inActiveCache.AddOrUpdate(event)
+			case DeleteInactiveWatch:
+				cs.inActiveCache.Delete(event)
+			case AddRecycleWatch:
+				cs.recyclCache.AddOrUpdate(event)
+			case DeleteRecycleWatch:
+				cs.recyclCache.Delete(event)
 			}
 		case <-cs.probeCh:
 			cs.ProbeAllCodeServer()
+			cs.ProbeAllInactivedCodeServer()
 		case <-stopCh:
 			return
 		}
 	}
 }
 
+func (cs *CodeServerWatcher) ProbeAllInactivedCodeServer() {
+	reqLogger := cs.Log.WithName("codeserverwatcher")
+	for _, key := range cs.recyclCache.GetKeys() {
+		css := cs.recyclCache.Get(key)
+		if css != nil {
+			reqLogger.Info(fmt.Sprintf("starting to determine whether inactive code server %s should be deleted", key))
+			if cs.CodeServerNowShouldDelete(css.LastInactiveTime.Time, css.NamespacedName.String(), css.Duration) {
+				cs.recycleCodeServer(css.NamespacedName)
+				cs.recyclCache.DeleteFromName(css.NamespacedName)
+			}
+		}
+	}
+}
+
 func (cs *CodeServerWatcher) ProbeAllCodeServer() {
 	reqLogger := cs.Log.WithName("codeserverwatcher")
-	for _, key := range cs.cache.GetKeys() {
-		css := cs.cache.Get(key)
+	for _, key := range cs.inActiveCache.GetKeys() {
+		css := cs.inActiveCache.Get(key)
 		if css != nil {
 			reqLogger.Info(fmt.Sprintf("starting to probe code server endpoint %s", key))
 			valid, t := cs.ProbeCodeServer(key, css)
@@ -179,21 +155,21 @@ func (cs *CodeServerWatcher) ProbeAllCodeServer() {
 				if css.FailureCount > cs.Options.MaxProbeRetry {
 					reqLogger.Info(fmt.Sprintf("probe code server %s failed and exceed max retries", key))
 					cs.inActiveCodeServer(css.NamespacedName)
-					cs.cache.DeleteFromName(css.NamespacedName)
+					cs.inActiveCache.DeleteFromName(css.NamespacedName)
 				} else {
-					cs.cache.BumpFailureCount(key)
+					cs.inActiveCache.BumpFailureCount(key)
 				}
 			} else {
 				if cs.CodeServerNowInactive(*t, key, css.Duration) {
 					cs.inActiveCodeServer(css.NamespacedName)
-					cs.cache.DeleteFromName(css.NamespacedName)
+					cs.inActiveCache.DeleteFromName(css.NamespacedName)
 				}
 			}
 		}
 	}
 }
 
-func (cs *CodeServerWatcher) ProbeCodeServer(key string, css *CodeServerStatus) (bool, *time.Time) {
+func (cs *CodeServerWatcher) ProbeCodeServer(key string, css *CodeServerActiveStatus) (bool, *time.Time) {
 	reqLogger := cs.Log.WithValues("codeserverwatcher", key)
 	resp, err := http.Get(css.ProbeEndpoint)
 	if err != nil {
@@ -206,22 +182,40 @@ func (cs *CodeServerWatcher) ProbeCodeServer(key string, css *CodeServerStatus) 
 		reqLogger.Error(err, fmt.Sprintf("failed to parse body from probe endpoint %s", css.ProbeEndpoint))
 		return false, nil
 	}
+
+	if resp.StatusCode == 204 {
+		reqLogger.Info(fmt.Sprintf("not content found in code server %s 's mtime attribute, maybe's been created now.", key))
+		return false, nil
+	}
 	if resp.StatusCode != 200 {
 		reqLogger.Error(err, fmt.Sprintf("failed to parse body from probe endpoint , status code %d", resp.StatusCode))
 		return false, nil
 	}
-	reqLogger.Info("probe liveness time %s for code server %s", string(body), key)
-	layout := "2006-01-02T15:04:05.000Z"
-	t, err := time.Parse(layout, string(body))
+	timeStr := strings.Trim(string(body), "\"")
+	reqLogger.Info(fmt.Sprintf("probe liveness time %s for code server %s", timeStr, key))
+	t, err := time.Parse(TimeLayout, timeStr)
 	if err != nil {
-		reqLogger.Error(err, fmt.Sprintf("failed to parse time string into time format %s", string(body)))
+		reqLogger.Error(err, fmt.Sprintf("failed to parse time string into time format %s", timeStr))
+		return false, nil
 	}
 	return true, &t
 }
 
 func (cs *CodeServerWatcher) CodeServerNowInactive(mtime time.Time, key string, duration int64) bool {
+	reqLogger := cs.Log.WithName("codeserverwatcher")
 	elapsed := time.Now().Sub(mtime)
 	if elapsed.Seconds() > float64(duration) {
+		reqLogger.Info(fmt.Sprintf("code server %s probed long time invalid, last active time %s and now %s", key, mtime, time.Now()))
+		return true
+	}
+	return false
+}
+
+func (cs *CodeServerWatcher) CodeServerNowShouldDelete(mtime time.Time, key string, duration int64) bool {
+	reqLogger := cs.Log.WithName("codeserverwatcher")
+	elapsed := time.Now().Sub(mtime)
+	if elapsed.Seconds() > float64(duration) {
+		reqLogger.Info(fmt.Sprintf("code server %s now should be deleted due to recycle time exceeds", key))
 		return true
 	}
 	return false

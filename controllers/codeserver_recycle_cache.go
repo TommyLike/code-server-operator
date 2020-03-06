@@ -17,39 +17,38 @@ limitations under the License.
 package controllers
 
 import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sync"
 )
 
-type CodeServerActiveCache struct {
+type CodeServerRecycleCache struct {
 	sync.RWMutex
-	Caches map[string]CodeServerActiveStatus
+	Caches map[string]CodeServerRecycleStatus
 }
 
-type CodeServerActiveStatus struct {
-	ProbeEndpoint  string
-	Duration       int64
-	FailureCount   int
-	NamespacedName types.NamespacedName
+type CodeServerRecycleStatus struct {
+	Duration         int64
+	LastInactiveTime metav1.Time
+	NamespacedName   types.NamespacedName
 }
 
-func (c *CodeServerActiveCache) AddOrUpdate(req CodeServerRequest) {
+func (c *CodeServerRecycleCache) AddOrUpdate(req CodeServerRequest) {
 	c.Lock()
 	defer c.Unlock()
 	if obj, found := c.Caches[req.resource.String()]; found {
 		obj.Duration = req.duration
-		obj.ProbeEndpoint = req.endpoint
+		obj.LastInactiveTime = req.inactiveTime
 	} else {
-		c.Caches[req.resource.String()] = CodeServerActiveStatus{
-			ProbeEndpoint:  req.endpoint,
-			Duration:       req.duration,
-			FailureCount:   0,
-			NamespacedName: req.resource,
+		c.Caches[req.resource.String()] = CodeServerRecycleStatus{
+			Duration:         req.duration,
+			LastInactiveTime: req.inactiveTime,
+			NamespacedName:   req.resource,
 		}
 	}
 }
 
-func (c *CodeServerActiveCache) Delete(req CodeServerRequest) {
+func (c *CodeServerRecycleCache) Delete(req CodeServerRequest) {
 	c.Lock()
 	defer c.Unlock()
 	if _, found := c.Caches[req.resource.String()]; found {
@@ -57,7 +56,7 @@ func (c *CodeServerActiveCache) Delete(req CodeServerRequest) {
 	}
 }
 
-func (c *CodeServerActiveCache) DeleteFromName(req types.NamespacedName) {
+func (c *CodeServerRecycleCache) DeleteFromName(req types.NamespacedName) {
 	c.Lock()
 	defer c.Unlock()
 	if _, found := c.Caches[req.String()]; found {
@@ -65,14 +64,7 @@ func (c *CodeServerActiveCache) DeleteFromName(req types.NamespacedName) {
 	}
 }
 
-func (c *CodeServerActiveCache) BumpFailureCount(key string) {
-	c.Lock()
-	defer c.Unlock()
-	if obj, found := c.Caches[key]; found {
-		obj.FailureCount += 1
-	}
-}
-func (c *CodeServerActiveCache) Get(key string) *CodeServerActiveStatus {
+func (c *CodeServerRecycleCache) Get(key string) *CodeServerRecycleStatus {
 	c.RLock()
 	defer c.RUnlock()
 	if obj, found := c.Caches[key]; found {
@@ -81,7 +73,7 @@ func (c *CodeServerActiveCache) Get(key string) *CodeServerActiveStatus {
 	return nil
 }
 
-func (c *CodeServerActiveCache) GetKeys() []string {
+func (c *CodeServerRecycleCache) GetKeys() []string {
 	var result []string
 	c.RLock()
 	defer c.RUnlock()

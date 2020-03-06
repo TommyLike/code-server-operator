@@ -68,6 +68,8 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			reqLogger.Info("CodeServer has been deleted. Trying to delete its related resources.")
+			r.deleteFromInactiveWatch(req.NamespacedName)
+			r.deleteFromRecycleWatch(req.NamespacedName)
 			if err := r.deleteCodeServerResource(req.Name, req.Namespace, true); err != nil {
 				return reconcile.Result{Requeue: true}, err
 			}
@@ -78,15 +80,20 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		return reconcile.Result{}, err
 	}
 
+	//code server now stays inactive, we will delete all resources except volume
 	if HasCondition(codeServer.Status, csv1alpha1.ServerInactive) && !HasCondition(codeServer.Status, csv1alpha1.ServerRecycled) {
-		//remove it from watch list
-		r.deleteFromWatch(req.NamespacedName)
+		//remove it from watch list and add it to recycle watch
+		r.deleteFromInactiveWatch(req.NamespacedName)
+		inActiveCondition := GetCondition(codeServer.Status, csv1alpha1.ServerInactive)
+		r.addToRecycleWatch(req.NamespacedName, *codeServer.Spec.RecycleAfterSeconds, inActiveCondition.LastTransitionTime)
 		if err := r.deleteCodeServerResource(codeServer.Name, codeServer.Namespace, false); err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
+		//code server now stays recycled, we will delete all resources
 	} else if HasCondition(codeServer.Status, csv1alpha1.ServerRecycled) {
 		//remove it from watch list
-		r.deleteFromWatch(req.NamespacedName)
+		r.deleteFromInactiveWatch(req.NamespacedName)
+		r.deleteFromRecycleWatch(req.NamespacedName)
 		if err := r.deleteCodeServerResource(codeServer.Name, codeServer.Namespace, true); err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
@@ -125,10 +132,14 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		} else {
 			//add it to watch list
 			endPoint := fmt.Sprintf("http://%s:%s/mtime", service.Spec.ClusterIP, "8000")
-			r.addToWatch(req.NamespacedName, *codeServer.Spec.RecycleAfterSeconds, endPoint)
+			r.addToInactiveWatch(req.NamespacedName, *codeServer.Spec.InactiveAfterSeconds, endPoint)
 		}
 		SetCondition(&codeServer.Status, readyCondition)
-
+		err = r.Client.Get(context.TODO(), req.NamespacedName, codeServer)
+		if err != nil {
+			reqLogger.Error(err, fmt.Sprintf("Failed to get CoderServer object %s for update.", req.NamespacedName))
+			return reconcile.Result{Requeue: true}, err
+		}
 		err = r.Client.Update(context.TODO(), codeServer)
 		if err != nil {
 			reqLogger.Error(err, "Failed to update code server status.")
@@ -138,20 +149,38 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 	return reconcile.Result{}, nil
 }
 
-func (r *CodeServerReconciler) addToWatch(resource types.NamespacedName, duration int64, endpoint string) {
+func (r *CodeServerReconciler) addToInactiveWatch(resource types.NamespacedName, duration int64, endpoint string) {
 	request := CodeServerRequest{
 		resource: resource,
 		duration: duration,
-		operate:  AddWatch,
+		operate:  AddInactiveWatch,
 		endpoint: endpoint,
 	}
 	r.ReqCh <- request
 }
 
-func (r *CodeServerReconciler) deleteFromWatch(resource types.NamespacedName) {
+func (r *CodeServerReconciler) deleteFromInactiveWatch(resource types.NamespacedName) {
 	request := CodeServerRequest{
 		resource: resource,
-		operate:  DeleteWatch,
+		operate:  DeleteInactiveWatch,
+	}
+	r.ReqCh <- request
+}
+
+func (r *CodeServerReconciler) addToRecycleWatch(resource types.NamespacedName, duration int64, inactivetime metav1.Time) {
+	request := CodeServerRequest{
+		resource:     resource,
+		operate:      AddRecycleWatch,
+		duration:     duration,
+		inactiveTime: inactivetime,
+	}
+	r.ReqCh <- request
+}
+
+func (r *CodeServerReconciler) deleteFromRecycleWatch(resource types.NamespacedName) {
+	request := CodeServerRequest{
+		resource: resource,
+		operate:  DeleteRecycleWatch,
 	}
 	r.ReqCh <- request
 }
@@ -244,7 +273,6 @@ func (r *CodeServerReconciler) reconcileForPVC(codeServer *csv1alpha1.CodeServer
 
 			reqLogger.Error(err, "Updating PersistentVolumeClaim is not supported.")
 			return oldPvc, nil
-
 		}
 	}
 	return oldPvc, nil
@@ -395,7 +423,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 									Value: m.Spec.ServerCipher,
 								},
 							},
-							Command:command,
+							Command:         command,
 							SecurityContext: &priviledged,
 							VolumeMounts: []corev1.VolumeMount{
 								{

@@ -18,6 +18,8 @@ package controllers
 
 import (
 	"k8s.io/apimachinery/pkg/types"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type CodeServerOption struct {
@@ -30,13 +32,16 @@ type CodeServerOption struct {
 type WatchType string
 
 const (
-	AddWatch    WatchType = "Add"
-	DeleteWatch WatchType = "Delete"
+	AddInactiveWatch    WatchType = "AddInactiveWatch"
+	DeleteInactiveWatch WatchType = "DeleteInactiveWatch"
+	AddRecycleWatch     WatchType = "AddRecycleWatch"
+	DeleteRecycleWatch  WatchType = "DeleteRecycleWatch"
 )
 
 type CodeServerRequest struct {
-	resource types.NamespacedName
-	duration int64
-	operate  WatchType
-	endpoint string
+	resource     types.NamespacedName
+	duration     int64
+	operate      WatchType
+	endpoint     string
+	inactiveTime metav1.Time
 }
