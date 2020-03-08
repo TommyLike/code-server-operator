@@ -14,3 +14,5 @@ spec:
       cpu: "2"
       memory: "2048m"
   serverCipher: "1234"
+  initPlugins:
+    git: ["--repourl", "https://github.com/TommyLike/tommylike.me.git"]

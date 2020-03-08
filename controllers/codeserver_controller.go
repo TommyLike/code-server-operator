@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-logr/logr"
+	"github.com/tommylike/code-server-operator/controllers/initplugins"
+	"github.com/tommylike/code-server-operator/controllers/initplugins/interface"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	extv1 "k8s.io/api/extensions/v1beta1"
@@ -39,9 +41,9 @@ import (
 )
 
 const (
-	CSNAME = "code-server"
+	CSNAME           = "code-server"
 	MaxActiveSeconds = 60 * 60 * 24
-	MaxKeepSeconds =  60 * 60 * 24 * 30
+	MaxKeepSeconds   = 60 * 60 * 24 * 30
 )
 
 // CodeServerReconciler reconciles a CodeServer object
@@ -90,7 +92,7 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		if (codeServer.Spec.RecycleAfterSeconds == nil) || *codeServer.Spec.RecycleAfterSeconds <= 0 || *codeServer.Spec.RecycleAfterSeconds >= MaxKeepSeconds {
 			// we keep the instance within MaxKeepSeconds maximumly
 			r.addToRecycleWatch(req.NamespacedName, MaxKeepSeconds, inActiveCondition.LastTransitionTime)
-		}else{
+		} else {
 			r.addToRecycleWatch(req.NamespacedName, *codeServer.Spec.RecycleAfterSeconds, inActiveCondition.LastTransitionTime)
 		}
 		if err := r.deleteCodeServerResource(codeServer.Name, codeServer.Namespace, false); err != nil {
@@ -142,7 +144,7 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 			if (codeServer.Spec.InactiveAfterSeconds == nil) || *codeServer.Spec.InactiveAfterSeconds <= 0 || *codeServer.Spec.InactiveAfterSeconds >= MaxActiveSeconds {
 				// we keep the instance within MaxActiveSeconds maximumly
 				r.addToInactiveWatch(req.NamespacedName, MaxActiveSeconds, endPoint)
-			}else{
+			} else {
 				r.addToInactiveWatch(req.NamespacedName, *codeServer.Spec.InactiveAfterSeconds, endPoint)
 			}
 
@@ -392,8 +394,32 @@ func (r *CodeServerReconciler) reconcileForService(codeServer *csv1alpha1.CodeSe
 	return oldService, nil
 }
 
+func (r *CodeServerReconciler) addInitContainersForDeployment(m *csv1alpha1.CodeServer, baseDir, baseDirVolume string) []corev1.Container {
+	var containers []corev1.Container
+	if len(m.Spec.InitPlugins) == 0 {
+		return containers
+	}
+	reqLogger := r.Log.WithValues("namespace", m.Namespace, "name", m.Name)
+	clientSet := _interface.PluginClients{Client: r.Client}
+	for p, arguments := range m.Spec.InitPlugins {
+		plugin, err := initplugins.CreatePlugin(clientSet, p, arguments, baseDir)
+		if err != nil {
+			reqLogger.Error(err, fmt.Sprintf("Failed to initialize init plugin %s", p))
+		}
+		container := plugin.GenerateInitContainerSpec()
+		//Add work space volume in default
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			MountPath: baseDir,
+			Name:      baseDirVolume,
+		})
+	}
+	return containers
+}
+
 // deploymentForCodeServer returns a code server Deployment object
 func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer) *appsv1.Deployment {
+	baseCodeDir := "/home/coder/project"
+	baseCodeVolume := "code-server-project-dir"
 	ls := labelsForCodeServer(m.Name)
 	replicas := int32(1)
 	enablePriviledge := true
@@ -444,8 +470,8 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 									Name:      "code-server-share-dir",
 								},
 								{
-									MountPath: "/home/coder/project",
-									Name:      "code-server-project-dir",
+									MountPath: baseCodeDir,
+									Name:      baseCodeVolume,
 								},
 							},
 							Ports: []corev1.ContainerPort{{
@@ -487,7 +513,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 							},
 						},
 						{
-							Name: "code-server-project-dir",
+							Name: baseCodeVolume,
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &dataVolume,
 							},
@@ -497,6 +523,8 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 			},
 		},
 	}
+	initContainer := r.addInitContainersForDeployment(m, baseCodeDir, baseCodeVolume)
+	dep.Spec.Template.Spec.InitContainers = initContainer
 	// Set CodeServer instance as the owner of the Deployment.
 	controllerutil.SetControllerReference(m, dep, r.Scheme)
 	return dep

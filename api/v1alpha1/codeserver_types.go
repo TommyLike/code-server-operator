@@ -42,6 +42,8 @@ type CodeServerSpec struct {
 	URL string `json:"url,omitempty" protobuf:"bytes,8,opt,name=url"`
 	// Specifies the image used to running code server
 	Image string `json:"image,omitempty" protobuf:"bytes,9,opt,name=image"`
+	// Specifies the init plugins that will be running to finish before code server running.
+	InitPlugins map[string][]string `json:"initPlugins,omitempty" protobuf:"bytes,10,opt,name=initPlugins"`
 }
 
 // ServerConditionType describes the type of state of code server condition
