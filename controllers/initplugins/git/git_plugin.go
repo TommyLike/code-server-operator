@@ -2,6 +2,7 @@ package git
 
 import (
 	"flag"
+	"fmt"
 	"github.com/golang/glog"
 	"github.com/tommylike/code-server-operator/controllers/initplugins/interface"
 	corev1 "k8s.io/api/core/v1"
@@ -36,7 +37,8 @@ func Create(c _interface.PluginClients, parameters []string, baseDir string) _in
 }
 
 func (p *GitPlugin) GenerateInitContainerSpec() *corev1.Container {
-	command := []string{"cd", p.BaseDirectory, "&", "git", "clone", p.RepoUrl}
+
+	command := []string{"sh", "-c", fmt.Sprintf("cd %s && git clone %s", p.BaseDirectory, p.RepoUrl)}
 	container := corev1.Container{
 		Image:           p.ImageUrl,
 		Name:            "init-git-clone",
