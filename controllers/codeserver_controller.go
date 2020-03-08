@@ -412,12 +412,14 @@ func (r *CodeServerReconciler) addInitContainersForDeployment(m *csv1alpha1.Code
 			MountPath: baseDir,
 			Name:      baseDirVolume,
 		})
+		containers = append(containers, *container)
 	}
 	return containers
 }
 
 // deploymentForCodeServer returns a code server Deployment object
 func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer) *appsv1.Deployment {
+	reqLogger := r.Log.WithValues("namespace", m.Namespace, "name", m.Name)
 	baseCodeDir := "/home/coder/project"
 	baseCodeVolume := "code-server-project-dir"
 	ls := labelsForCodeServer(m.Name)
@@ -436,6 +438,9 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 	}
 	command := []string{"dumb-init", "code-server", "--host", "0.0.0.0", "--base-path", fmt.Sprintf("/%s", m.Spec.URL)}
 
+	initContainer := r.addInitContainersForDeployment(m, baseCodeDir, baseCodeVolume)
+	reqLogger.Info(fmt.Sprintf("init containers has been injected into deployment %v", initContainer))
+
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      m.Name,
@@ -451,6 +456,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 					Labels: ls,
 				},
 				Spec: corev1.PodSpec{
+					InitContainers: initContainer,
 					Containers: []corev1.Container{
 						{
 							Image:           m.Spec.Image,
@@ -523,8 +529,6 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 			},
 		},
 	}
-	initContainer := r.addInitContainersForDeployment(m, baseCodeDir, baseCodeVolume)
-	dep.Spec.Template.Spec.InitContainers = initContainer
 	// Set CodeServer instance as the owner of the Deployment.
 	controllerutil.SetControllerReference(m, dep, r.Scheme)
 	return dep

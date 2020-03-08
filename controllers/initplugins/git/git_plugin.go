@@ -21,7 +21,6 @@ type GitPlugin struct {
 
 func (p *GitPlugin) parseFlags(arguments []string) {
 	flagSet := flag.NewFlagSet(GetName(), flag.ContinueOnError)
-	flagSet.StringVar(&p.BaseDirectory, "basedir", "/", "The working dir for git plugin")
 	flagSet.StringVar(&p.RepoUrl, "repourl", "", "The git repo for git plugin to clone, username and password should be provided if it's private repo, for instance: https://username:password@github.com/username/repository.git")
 	if err := flagSet.Parse(arguments); err != nil {
 		glog.Errorf("plugin %s flagset parse failed, err: %v", GetName(), err)
