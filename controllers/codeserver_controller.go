@@ -108,7 +108,7 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		}
 	} else {
 		// 1/5: reconcile PVC
-		_, err := r.reconcileForPVC(codeServer)
+		_, created, err := r.reconcileForPVC(codeServer)
 		if err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
@@ -123,7 +123,7 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 			return reconcile.Result{Requeue: true}, err
 		}
 		// 4/5: reconcile deployment
-		dep, err := r.reconcileForDeployment(codeServer)
+		dep, err := r.reconcileForDeployment(codeServer, created)
 		if err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
@@ -260,14 +260,14 @@ func (r *CodeServerReconciler) deleteCodeServerResource(name, namespace string, 
 	return nil
 }
 
-func (r *CodeServerReconciler) reconcileForPVC(codeServer *csv1alpha1.CodeServer) (*corev1.PersistentVolumeClaim, error) {
+func (r *CodeServerReconciler) reconcileForPVC(codeServer *csv1alpha1.CodeServer) (*corev1.PersistentVolumeClaim, bool, error) {
 	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
 	reqLogger.Info("Reconciling persistent volume claim.")
 	//reconcile pvc for code server
 	newPvc, err := r.pvcForCodeServer(codeServer)
 	if err != nil {
 		reqLogger.Error(err, "Failed to create new PersistentVolumeClaim.")
-		return nil, err
+		return nil, false, err
 	}
 	oldPvc := &corev1.PersistentVolumeClaim{}
 	err = r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, oldPvc)
@@ -276,28 +276,28 @@ func (r *CodeServerReconciler) reconcileForPVC(codeServer *csv1alpha1.CodeServer
 		err = r.Client.Create(context.TODO(), newPvc)
 		if err != nil {
 			reqLogger.Error(err, "Failed to create PersistentVolumeClaim.")
-			return nil, nil
+			return nil, false, err
 		}
+		return newPvc, true, nil
 	} else {
 		if err != nil {
 			//Reschedule the event
 			reqLogger.Error(err, fmt.Sprintf("Failed to get PVC for %s.", codeServer.Name))
-			return nil, err
+			return nil, false, err
 		}
 		if needUpdatePVC(oldPvc, newPvc) {
-
 			reqLogger.Error(err, "Updating PersistentVolumeClaim is not supported.")
-			return oldPvc, nil
+			return oldPvc, false, nil
 		}
 	}
-	return oldPvc, nil
+	return oldPvc, false, nil
 }
 
-func (r *CodeServerReconciler) reconcileForDeployment(codeServer *csv1alpha1.CodeServer) (*appsv1.Deployment, error) {
+func (r *CodeServerReconciler) reconcileForDeployment(codeServer *csv1alpha1.CodeServer, newVolume bool) (*appsv1.Deployment, error) {
 	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
 	reqLogger.Info("Reconciling Deployment.")
 	//reconcile pvc for code server
-	newDev := r.deploymentForCodeServer(codeServer)
+	newDev := r.deploymentForCodeServer(codeServer, newVolume)
 	oldDev := &appsv1.Deployment{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, oldDev)
 	if err != nil && errors.IsNotFound(err) {
@@ -394,7 +394,7 @@ func (r *CodeServerReconciler) reconcileForService(codeServer *csv1alpha1.CodeSe
 	return oldService, nil
 }
 
-func (r *CodeServerReconciler) addInitContainersForDeployment(m *csv1alpha1.CodeServer, baseDir, baseDirVolume string) []corev1.Container {
+func (r *CodeServerReconciler) addInitContainersForDeployment(m *csv1alpha1.CodeServer, baseDir, baseDirVolume string, newVolume bool) []corev1.Container {
 	var containers []corev1.Container
 	if len(m.Spec.InitPlugins) == 0 {
 		return containers
@@ -402,9 +402,12 @@ func (r *CodeServerReconciler) addInitContainersForDeployment(m *csv1alpha1.Code
 	reqLogger := r.Log.WithValues("namespace", m.Namespace, "name", m.Name)
 	clientSet := _interface.PluginClients{Client: r.Client}
 	for p, arguments := range m.Spec.InitPlugins {
-		plugin, err := initplugins.CreatePlugin(clientSet, p, arguments, baseDir)
+		plugin, err := initplugins.CreatePlugin(clientSet, p, arguments, baseDir, newVolume)
 		if err != nil {
 			reqLogger.Error(err, fmt.Sprintf("Failed to initialize init plugin %s", p))
+		}
+		if plugin == nil {
+			reqLogger.Info(fmt.Sprintf("Plugin %s skipped.", p))
 		}
 		container := plugin.GenerateInitContainerSpec()
 		//Add work space volume in default
@@ -418,7 +421,7 @@ func (r *CodeServerReconciler) addInitContainersForDeployment(m *csv1alpha1.Code
 }
 
 // deploymentForCodeServer returns a code server Deployment object
-func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer) *appsv1.Deployment {
+func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer, newVolume bool) *appsv1.Deployment {
 	reqLogger := r.Log.WithValues("namespace", m.Namespace, "name", m.Name)
 	baseCodeDir := "/home/coder/project"
 	baseCodeVolume := "code-server-project-dir"
@@ -440,7 +443,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 	}
 	command := []string{"sh", "-c", fmt.Sprintf("chown -R coder:coder %s && su coder && exec dumb-init code-server --host 0.0.0.0 --base-path %s", baseCodeDir, fmt.Sprintf("/%s", m.Spec.URL))}
 
-	initContainer := r.addInitContainersForDeployment(m, baseCodeDir, baseCodeVolume)
+	initContainer := r.addInitContainersForDeployment(m, baseCodeDir, baseCodeVolume, newVolume)
 	reqLogger.Info(fmt.Sprintf("init containers has been injected into deployment %v", initContainer))
 
 	dep := &appsv1.Deployment{
