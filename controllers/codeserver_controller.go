@@ -141,9 +141,12 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		} else {
 			//add it to watch list
 			endPoint := fmt.Sprintf("http://%s:%s/mtime", service.Spec.ClusterIP, "8000")
-			if (codeServer.Spec.InactiveAfterSeconds == nil) || *codeServer.Spec.InactiveAfterSeconds <= 0 || *codeServer.Spec.InactiveAfterSeconds >= MaxActiveSeconds {
+			if (codeServer.Spec.InactiveAfterSeconds == nil) || *codeServer.Spec.InactiveAfterSeconds < 0 || *codeServer.Spec.InactiveAfterSeconds >= MaxActiveSeconds {
 				// we keep the instance within MaxActiveSeconds maximumly
 				r.addToInactiveWatch(req.NamespacedName, MaxActiveSeconds, endPoint)
+			} else if *codeServer.Spec.InactiveAfterSeconds == 0 {
+				// we will not watch this code server instance if inactive is set 0
+				reqLogger.Info("Code server will never be inactived")
 			} else {
 				r.addToInactiveWatch(req.NamespacedName, *codeServer.Spec.InactiveAfterSeconds, endPoint)
 			}
@@ -152,7 +155,7 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 		SetCondition(&codeServer.Status, readyCondition)
 		err = r.Client.Get(context.TODO(), req.NamespacedName, codeServer)
 		if err != nil {
-			reqLogger.Error(err, fmt.Sprintf("Failed to get CoderServer object %s for update.", req.NamespacedName))
+			reqLogger.Error(err,"Failed to get CoderServer object for update.")
 			return reconcile.Result{Requeue: true}, err
 		}
 		err = r.Client.Update(context.TODO(), codeServer)
