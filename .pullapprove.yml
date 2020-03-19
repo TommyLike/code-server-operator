@@ -3,7 +3,6 @@ pullapprove_conditions:
   - "'WIP' not in title"
   - "base.ref == 'master'"
   - "'hotfix' not in labels"
-  - "'*travis*' in statuses.succeeded"
 
 notifications:
   - when: pull_request.opened
@@ -18,6 +17,8 @@ notifications:
 
 groups:
   code:
+    conditions:
+      - "files.include('*.md')"
     reviewers:
       users:
         - TommyLike
