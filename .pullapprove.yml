@@ -24,8 +24,8 @@ groups:
         - TommyLike
         - zhongjun2
     reviews:
-      required: 2  # number of approvals required from this group
-      request: 2  # number of review requests sent at a time
+      required: 1  # number of approvals required from this group
+      request: 1 # number of review requests sent at a time
       request_order: random  # "random" or "given"
     labels:
       approved: "Code review approved"
