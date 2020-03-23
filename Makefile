@@ -62,6 +62,11 @@ docker-build:
 docker-push:
 	docker push ${IMG}
 
+# Generate yamls for deploy
+generate-yaml:
+	kustomize build config/crd
+	cd config/manager && kustomize edit set image controller=${IMG}
+	kustomize build config/default > deploy/install-code-server-operator.yaml
 # find or download controller-gen
 # download controller-gen if necessary
 controller-gen:
