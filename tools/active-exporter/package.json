@@ -1,0 +1,16 @@
+{
+    "name": "code-server-exporter",
+    "version": "0.0.1",
+    "description": "tool used to export code server status",
+    "main": "app.js",
+    "dependencies": {
+      "express": "^4.17.1",
+      "forever": "^1.0.0"
+    },
+    "devDependencies": {},
+    "scripts": {
+      "forever": "node_modules/forever/bin/forever app.js"
+    },
+    "author": "tommylike",
+    "license": "MIT"
+  }
