@@ -1,6 +1,7 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= tommylike/codeserver-controller:latest
+IMG=tommylike/codeserver-controller:$(shell git rev-parse --verify HEAD)
+ARCHITECTURE ?= "amd64"
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true"
 
@@ -56,7 +57,7 @@ generate: controller-gen
 
 # Build the docker image
 docker-build:
-	docker build . -t ${IMG}
+	docker build . -t ${IMG} --build-arg GO_ARCHITECTURE=${ARCHITECTURE}
 
 # Push the docker image
 docker-push:
