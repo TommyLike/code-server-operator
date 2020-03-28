@@ -1,4 +1,6 @@
 # Code sever operator
+![Publish Docker images](https://github.com/TommyLike/code-server-operator/workflows/Publish%20Docker%20images/badge.svg)
+
 This project used to launch multiple code server instances in k8s cluster.
 
 
