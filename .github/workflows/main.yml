@@ -22,5 +22,5 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
           snapshot: true
-          dockerfile: ./code-server-operator/tools/active-exporter/Dockerfile
-          workdir: ./code-server-operator/tools/active-exporter
+          dockerfile: ./tools/active-exporter/Dockerfile
+          workdir: ./tools/active-exporter
