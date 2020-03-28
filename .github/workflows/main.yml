@@ -3,17 +3,24 @@ on:
   push:
     branches: [ master ]
 jobs:
-  build:
+  build-images:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@master
-      - name: build docker image
-        shell: bash
-        run: make docker-build
-      - name: Publish to Registry
+      - name: Publish controller to registry
         uses: elgohr/Publish-Docker-Github-Action@master
         with:
           name: tommylike/codeserver-controller
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
           snapshot: true
+          buildargs: GO_ARCHITECTURE=amd64
+      - name: Publish exporter to registry
+        uses: elgohr/Publish-Docker-Github-Action@master
+        with:
+          name: tommylike/active-exporter
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          snapshot: true
+          dockerfile: ./code-server-operator/tools/active-exporter/Dockerfile
+          workdir: ./code-server-operator/tools/active-exporter
