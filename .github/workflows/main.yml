@@ -24,7 +24,7 @@ jobs:
           snapshot: true
           workdir: ./tools/active-exporter
   build-arm-images:
-    runs-on: huaweicloud-arm-node
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@master
       - name: Publish controller to registry
