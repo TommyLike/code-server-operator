@@ -6,7 +6,7 @@ jobs:
   build-x86-images:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@stable
+      - uses: actions/checkout@master
       - name: Publish controller to registry
         uses: elgohr/Publish-Docker-Github-Action@master
         with:
@@ -26,7 +26,7 @@ jobs:
   build-arm-images:
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@stable
+      - uses: actions/checkout@master
       - name: Publish controller to registry
         uses: elgohr/Publish-Docker-Github-Action@master
         with:
