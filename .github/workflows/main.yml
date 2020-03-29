@@ -3,7 +3,7 @@ on:
   push:
     branches: [ master ]
 jobs:
-  build-images:
+  build-x86-images:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@master
@@ -19,6 +19,26 @@ jobs:
         uses: elgohr/Publish-Docker-Github-Action@master
         with:
           name: tommylike/active-exporter
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          snapshot: true
+          workdir: ./tools/active-exporter
+  build-arm-images:
+    runs-on: huaweicloud-arm-node
+    steps:
+      - uses: actions/checkout@master
+      - name: Publish controller to registry
+        uses: elgohr/Publish-Docker-Github-Action@master
+        with:
+          name: tommylike/codeserver-controller-arm
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          snapshot: true
+          buildargs: GO_ARCHITECTURE=arm64
+      - name: Publish exporter to registry
+        uses: elgohr/Publish-Docker-Github-Action@master
+        with:
+          name: tommylike/active-exporter-arm
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
           snapshot: true
