@@ -1,7 +1,11 @@
 name: Publish Docker images
 on:
   push:
-    branches: [ stable ]
+    branches:
+      - stable
+  pull_request:
+    branches:
+      - stable
 jobs:
   build-x86-images:
     runs-on: ubuntu-latest
@@ -10,7 +14,7 @@ jobs:
       - name: Publish controller to registry
         uses: elgohr/Publish-Docker-Github-Action@master
         with:
-          name: tommylike/codeserver-controller
+          name: tommylike/codeserver-controller-x86
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
           snapshot: true
@@ -18,7 +22,7 @@ jobs:
       - name: Publish exporter to registry
         uses: elgohr/Publish-Docker-Github-Action@master
         with:
-          name: tommylike/active-exporter
+          name: tommylike/active-exporter-x86
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
           snapshot: true
@@ -43,3 +47,27 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
           snapshot: true
           workdir: ./tools/active-exporter
+  build-x86-codeservers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Publish controller to registry
+        uses: elgohr/Publish-Docker-Github-Action@master
+        with:
+          name: tommylike/cs-ubuntu-x86
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          snapshot: true
+          workdir: ./image_templates/x86/ubuntu
+  build-arm-codeservers:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@master
+      - name: Publish controller to registry
+        uses: elgohr/Publish-Docker-Github-Action@master
+        with:
+          name: tommylike/cs-ubuntu-arm
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          snapshot: true
+          workdir: ./image_templates/arm/ubuntu
