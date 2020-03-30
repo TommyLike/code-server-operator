@@ -427,12 +427,10 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 	baseCodeDir := "/home/coder/project"
 	baseCodeVolume := "code-server-project-dir"
 	ls := labelsForCodeServer(m.Name)
-	userRoot := int64(0)
 	replicas := int32(1)
 	enablePriviledge := true
 	priviledged := corev1.SecurityContext{
 		Privileged: &enablePriviledge,
-		RunAsUser:  &userRoot,
 	}
 	shareQuantity, _ := resourcev1.ParseQuantity("500M")
 	shareVolume := corev1.EmptyDirVolumeSource{
@@ -442,7 +440,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 	dataVolume := corev1.PersistentVolumeClaimVolumeSource{
 		ClaimName: m.Name,
 	}
-	command := []string{"sh", "-c", fmt.Sprintf("chown -R coder:coder %s && su coder && exec dumb-init code-server --host 0.0.0.0 --base-path %s", baseCodeDir, fmt.Sprintf("/%s", m.Spec.URL))}
+	arguments := []string{"--base-path", fmt.Sprintf("/%s", m.Spec.URL)}
 
 	initContainer := r.addInitContainersForDeployment(m, baseCodeDir, baseCodeVolume)
 	reqLogger.Info(fmt.Sprintf("init containers has been injected into deployment %v", initContainer))
@@ -474,7 +472,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 									Value: m.Spec.ServerCipher,
 								},
 							},
-							Command:         command,
+							Args: arguments,
 							SecurityContext: &priviledged,
 							VolumeMounts: []corev1.VolumeMount{
 								{
