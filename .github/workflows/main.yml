@@ -1,7 +1,11 @@
 name: Publish Docker images
 on:
   push:
-    branches: [ stable ]
+    branches:
+      - stable
+  pull_request:
+    branches:
+      - stable
 jobs:
   build-x86-images:
     runs-on: ubuntu-latest
