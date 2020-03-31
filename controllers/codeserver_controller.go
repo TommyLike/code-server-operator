@@ -44,7 +44,7 @@ const (
 	CSNAME           = "code-server"
 	MaxActiveSeconds = 60 * 60 * 24
 	MaxKeepSeconds   = 60 * 60 * 24 * 30
-	CertFile         = "tls.cert"
+	CertFile         = "tls.crt"
 	CertKey          = "tls.key"
 )
 
@@ -202,9 +202,10 @@ func (r *CodeServerReconciler) findLegalCertSecrets(codeServer *csv1alpha1.CodeS
 			reqLogger.Info(fmt.Sprintf("could not found secret key %s in secret, skip enabling https", CertKey))
 			return nil
 		}
+		reqLogger.Info(fmt.Sprintf("found secret %s in cluster, do enabling https", r.Options.HttpsSecretName))
 		return tlsSecret
 	}
-	reqLogger.Info("could not found secret %s in cluster, skip enabling https")
+	reqLogger.Info(fmt.Sprintf("could not found secret %s in cluster, skip enabling https", r.Options.HttpsSecretName))
 	return nil
 }
 
@@ -465,9 +466,9 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer,
 	}
 	arguments := []string{"--base-path", fmt.Sprintf("/%s", m.Spec.URL)}
 	if secret == nil {
-		arguments = append(arguments, []string{"--port", "80"}...)
+		arguments = append(arguments, []string{"--port", "8080"}...)
 	} else {
-		arguments = append(arguments, []string{"--port", "443"}...)
+		arguments = append(arguments, []string{"--port", "8443"}...)
 	}
 
 	initContainer := r.addInitContainersForDeployment(m, baseCodeDir, baseCodeVolume)
@@ -563,7 +564,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer,
 	}
 
 	if secret != nil {
-		reqLogger.Info("Found tls secret %s, will enable https for code server", secret.Name)
+		reqLogger.Info(fmt.Sprintf("Found tls secret %s, will enable https for code server", secret.Name))
 		secretSource := corev1.SecretVolumeSource{
 			SecretName: r.Options.HttpsSecretName,
 		}
@@ -574,23 +575,18 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer,
 			},
 		}
 		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes, secretVolume)
-		for _, container := range dep.Spec.Template.Spec.Containers {
-			if container.Name == CSNAME {
+		for index, con := range dep.Spec.Template.Spec.Containers {
+			if con.Name == CSNAME {
 				secretsArgument := []string{"--cert", fmt.Sprintf("/etc/config/csserver/%s", CertFile), "--cert-key", fmt.Sprintf("/etc/config/csserver/%s", CertKey)}
-				container.Args = append(container.Args, secretsArgument...)
+				dep.Spec.Template.Spec.Containers[index].Args = append(dep.Spec.Template.Spec.Containers[index].Args, secretsArgument...)
 				newVolumeMounts := []corev1.VolumeMount{
 					{
 						MountPath: "/etc/config/csserver",
 						Name:      "code-server-secret-vol",
-						SubPath: CertFile,
-					},
-					{
-						MountPath: "/etc/config/csserver",
-						Name:      "code-server-secret-vol",
-						SubPath: CertKey,
 					},
 				}
-				container.VolumeMounts = append(container.VolumeMounts, newVolumeMounts...)
+				dep.Spec.Template.Spec.Containers[index].VolumeMounts = append(
+					dep.Spec.Template.Spec.Containers[index].VolumeMounts, newVolumeMounts...)
 			}
 		}
 	}
@@ -621,17 +617,17 @@ func (r *CodeServerReconciler) serviceForCodeServer(m *csv1alpha1.CodeServer, se
 	}
 	if secret == nil {
 		ser.Spec.Ports = append(ser.Spec.Ports, corev1.ServicePort{
-			Port:       80,
+			Port:       8080,
 			Name:       "web-ui",
 			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(80),
+			TargetPort: intstr.FromInt(8080),
 		})
 	} else {
 		ser.Spec.Ports = append(ser.Spec.Ports, corev1.ServicePort{
-			Port:       443,
+			Port:       8443,
 			Name:       "web-ui",
 			Protocol:   corev1.ProtocolTCP,
-			TargetPort: intstr.FromInt(443),
+			TargetPort: intstr.FromInt(8443),
 		})
 	}
 	// Set CodeServer instance as the owner of the Service.
@@ -667,9 +663,9 @@ func (r *CodeServerReconciler) pvcForCodeServer(m *csv1alpha1.CodeServer) (*core
 
 // ingressForCodeServer function takes in a CodeServer object and returns a ingress for that object.
 func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer, secret *corev1.Secret) *extv1.Ingress {
-	servicePort := intstr.FromInt(80)
+	servicePort := intstr.FromInt(8080)
 	if secret != nil {
-		servicePort = intstr.FromInt(443)
+		servicePort = intstr.FromInt(8443)
 	}
 	httpValue := extv1.HTTPIngressRuleValue{
 		Paths: []extv1.HTTPIngressPath{
@@ -686,7 +682,7 @@ func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer, se
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        m.Name,
 			Namespace:   m.Namespace,
-			Annotations: annotationsForIngress(m),
+			Annotations: annotationsForIngress(m, secret),
 		},
 		Spec: extv1.IngressSpec{
 			Rules: []extv1.IngressRule{
@@ -699,20 +695,35 @@ func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer, se
 			},
 		},
 	}
+	if secret != nil {
+		ingress.Spec.TLS = []extv1.IngressTLS{
+			{
+				Hosts:[]string{r.Options.DomainName},
+				SecretName: r.Options.HttpsSecretName,
+			},
+		}
+	}
 	// Set CodeServer instance as the owner of the ingress.
 	controllerutil.SetControllerReference(m, ingress, r.Scheme)
 	return ingress
 }
 
-func annotationsForIngress(m *csv1alpha1.CodeServer) map[string]string {
+func annotationsForIngress(m *csv1alpha1.CodeServer, secret *corev1.Secret) map[string]string {
 	snippet := fmt.Sprintf(`proxy_set_header Accept-Encoding '';
 sub_filter '<head>' '<head> <base href="/%s/">';`, m.Spec.URL)
-	return map[string]string{
+	annotation := map[string]string{
 		"kubernetes.io/ingress.class":                       "nginx",
 		"nginx.ingress.kubernetes.io/use-regex":             "true",
 		"nginx.ingress.kubernetes.io/rewrite-target":        "/$2",
 		"nginx.ingress.kubernetes.io/configuration-snippet": snippet,
 	}
+
+	if secret != nil {
+		annotation["nginx.ingress.kubernetes.io/secure-backends"] = "true"
+		annotation["nginx.ingress.kubernetes.io/backend-protocol"] = "HTTPS"
+	}
+
+	return annotation
 }
 
 // labelsForCodeServer returns the labels for selecting the resources

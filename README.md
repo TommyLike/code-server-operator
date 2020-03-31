@@ -8,6 +8,8 @@ This project used to launch multiple code server instances in k8s cluster.
 1. Release compute resource if the code server keeps inactive for some time.
 2. Release volume resource if the code server has not been used for a period of long time.
 3. Git clone code automatically before running code sever.
+4. TLS/SSL enabled.
+5. x86&arm supported
 
 The sample yaml can be found in `example` folder:
 ```$xslt
@@ -33,6 +35,15 @@ spec:
       - https://github.com/TommyLike/tommylike.me.git
 
 ```
+
+# Image templates
+Supported base images are list below:
+
+| OS\Arch   |   x86              |  aarch64               |
+|-----------|--------------------|------------------------|
+| Ubuntu    |  :white_check_mark |  :white_check_mark     |
+| Centos    |  :white_check_mark |  :white_check_mark     |
+| openEuler |  :white_check_mark |  :white_check_mark     |
 
 # Develop
 We use **kind** to boot up the kubernetes cluster, please use the script file to prepare cluster.
