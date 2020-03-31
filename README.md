@@ -39,11 +39,11 @@ spec:
 # Image templates
 Supported base images are list below:
 
-| OS\Arch   |   x86              |  aarch64               |
-|-----------|--------------------|------------------------|
-| Ubuntu    |  :white_check_mark |  :white_check_mark     |
-| Centos    |  :white_check_mark |  :white_check_mark     |
-| openEuler |  :white_check_mark |  :white_check_mark     |
+| OS\Arch   | x86  | aarch64 |
+|-----------|------|---------|
+| Ubuntu    |  ✅  |  ✅    |
+| Centos    |  ❎  |  ❎    |
+| openEuler |  ❎  |  ❎    |
 
 # Develop
 We use **kind** to boot up the kubernetes cluster, please use the script file to prepare cluster.
