@@ -76,12 +76,13 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "enable-leader-election", false,
 		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&csOption.DomainName, "domain-name", "code.tommylike.me", "Code server domain name.")
-	flag.StringVar(&csOption.ExporterImage, "default-exporter", "tommylike/code-server-exporter:0.0.1",
+	flag.StringVar(&csOption.ExporterImage, "default-exporter", "tommylike/active-exporter-x86:stable",
 		"Default exporter image used as a code server sidecar.")
 	flag.IntVar(&csOption.ProbeInterval, "probe-interval", 20,
 		"time in seconds between two probes on code server instance.")
 	flag.IntVar(&csOption.MaxProbeRetry, "max-probe-retry", 4,
 		"count before marking code server inactive when failed to probe liveness")
+	flag.StringVar(&csOption.HttpsSecretName, "secrets-name", "web-secrets", "Secret which holds the https cert(tls.crt) and key file(tls.key).")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(func(o *zap.Options) {
