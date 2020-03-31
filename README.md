@@ -11,6 +11,7 @@ This project used to launch multiple code server instances in k8s cluster.
 4. TLS/SSL enabled.
 5. x86&arm supported
 
+# Sample Yaml
 The sample yaml can be found in `example` folder:
 ```$xslt
 apiVersion: cs.tommylike.com/v1alpha1
