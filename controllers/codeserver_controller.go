@@ -44,6 +44,8 @@ const (
 	CSNAME           = "code-server"
 	MaxActiveSeconds = 60 * 60 * 24
 	MaxKeepSeconds   = 60 * 60 * 24 * 30
+	CertFile         = "tls.cert"
+	CertKey          = "tls.key"
 )
 
 // CodeServerReconciler reconciles a CodeServer object
@@ -107,23 +109,25 @@ func (r *CodeServerReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) 
 			return reconcile.Result{Requeue: true}, err
 		}
 	} else {
+		// 0/5 check whether we need enable https
+		tlsSecret := r.findLegalCertSecrets(codeServer)
 		// 1/5: reconcile PVC
-		_, err := r.reconcileForPVC(codeServer)
+		_, err = r.reconcileForPVC(codeServer)
 		if err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
 		// 2/5:reconcile ingress
-		_, err = r.reconcileForIngress(codeServer)
+		_, err = r.reconcileForIngress(codeServer, tlsSecret)
 		if err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
 		// 3/5: reconcile service
-		service, err := r.reconcileForService(codeServer)
+		service, err := r.reconcileForService(codeServer, tlsSecret)
 		if err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
 		// 4/5: reconcile deployment
-		dep, err := r.reconcileForDeployment(codeServer)
+		dep, err := r.reconcileForDeployment(codeServer, tlsSecret)
 		if err != nil {
 			return reconcile.Result{Requeue: true}, err
 		}
@@ -183,6 +187,25 @@ func (r *CodeServerReconciler) deleteFromInactiveWatch(resource types.Namespaced
 		operate:  DeleteInactiveWatch,
 	}
 	r.ReqCh <- request
+}
+
+func (r *CodeServerReconciler) findLegalCertSecrets(codeServer *csv1alpha1.CodeServer) *corev1.Secret {
+	reqLogger := r.Log.WithValues("namespace", codeServer.Name, "name", codeServer.Namespace)
+	tlsSecret := &corev1.Secret{}
+	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: r.Options.HttpsSecretName, Namespace: codeServer.Namespace}, tlsSecret)
+	if err == nil {
+		if _, ok := tlsSecret.Data[CertFile]; !ok {
+			reqLogger.Info(fmt.Sprintf("could not found secret key %s in secret, skip enabling https", CertFile))
+			return nil
+		}
+		if _, ok := tlsSecret.Data[CertKey]; !ok {
+			reqLogger.Info(fmt.Sprintf("could not found secret key %s in secret, skip enabling https", CertKey))
+			return nil
+		}
+		return tlsSecret
+	}
+	reqLogger.Info("could not found secret %s in cluster, skip enabling https")
+	return nil
 }
 
 func (r *CodeServerReconciler) addToRecycleWatch(resource types.NamespacedName, duration int64, inactivetime metav1.Time) {
@@ -296,11 +319,11 @@ func (r *CodeServerReconciler) reconcileForPVC(codeServer *csv1alpha1.CodeServer
 	return oldPvc, nil
 }
 
-func (r *CodeServerReconciler) reconcileForDeployment(codeServer *csv1alpha1.CodeServer) (*appsv1.Deployment, error) {
+func (r *CodeServerReconciler) reconcileForDeployment(codeServer *csv1alpha1.CodeServer, secret *corev1.Secret) (*appsv1.Deployment, error) {
 	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
 	reqLogger.Info("Reconciling Deployment.")
 	//reconcile pvc for code server
-	newDev := r.deploymentForCodeServer(codeServer)
+	newDev := r.deploymentForCodeServer(codeServer, secret)
 	oldDev := &appsv1.Deployment{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, oldDev)
 	if err != nil && errors.IsNotFound(err) {
@@ -329,11 +352,11 @@ func (r *CodeServerReconciler) reconcileForDeployment(codeServer *csv1alpha1.Cod
 	return oldDev, nil
 }
 
-func (r *CodeServerReconciler) reconcileForIngress(codeServer *csv1alpha1.CodeServer) (*extv1.Ingress, error) {
+func (r *CodeServerReconciler) reconcileForIngress(codeServer *csv1alpha1.CodeServer, secret *corev1.Secret) (*extv1.Ingress, error) {
 	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
 	reqLogger.Info("Reconciling ingress.")
 	//reconcile ingress for code server
-	newIngress := r.ingressForCodeServer(codeServer)
+	newIngress := r.ingressForCodeServer(codeServer, secret)
 	oldIngress := &extv1.Ingress{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, oldIngress)
 	if err != nil && errors.IsNotFound(err) {
@@ -363,11 +386,11 @@ func (r *CodeServerReconciler) reconcileForIngress(codeServer *csv1alpha1.CodeSe
 	return oldIngress, nil
 }
 
-func (r *CodeServerReconciler) reconcileForService(codeServer *csv1alpha1.CodeServer) (*corev1.Service, error) {
+func (r *CodeServerReconciler) reconcileForService(codeServer *csv1alpha1.CodeServer, secret *corev1.Secret) (*corev1.Service, error) {
 	reqLogger := r.Log.WithValues("namespace", codeServer.Namespace, "name", codeServer.Name)
 	reqLogger.Info("Reconciling service.")
 	//reconcile service for code server
-	newService := r.serviceForCodeServer(codeServer)
+	newService := r.serviceForCodeServer(codeServer, secret)
 	oldService := &corev1.Service{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: codeServer.Name, Namespace: codeServer.Namespace}, oldService)
 	if err != nil && errors.IsNotFound(err) {
@@ -422,7 +445,7 @@ func (r *CodeServerReconciler) addInitContainersForDeployment(m *csv1alpha1.Code
 }
 
 // deploymentForCodeServer returns a code server Deployment object
-func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer) *appsv1.Deployment {
+func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer, secret *corev1.Secret) *appsv1.Deployment {
 	reqLogger := r.Log.WithValues("namespace", m.Namespace, "name", m.Name)
 	baseCodeDir := "/home/coder/project"
 	baseCodeVolume := "code-server-project-dir"
@@ -441,6 +464,11 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 		ClaimName: m.Name,
 	}
 	arguments := []string{"--base-path", fmt.Sprintf("/%s", m.Spec.URL)}
+	if secret == nil {
+		arguments = append(arguments, []string{"--port", "80"}...)
+	} else {
+		arguments = append(arguments, []string{"--port", "443"}...)
+	}
 
 	initContainer := r.addInitContainersForDeployment(m, baseCodeDir, baseCodeVolume)
 	reqLogger.Info(fmt.Sprintf("init containers has been injected into deployment %v", initContainer))
@@ -533,13 +561,46 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer)
 			},
 		},
 	}
+
+	if secret != nil {
+		reqLogger.Info("Found tls secret %s, will enable https for code server", secret.Name)
+		secretSource := corev1.SecretVolumeSource{
+			SecretName: r.Options.HttpsSecretName,
+		}
+		secretVolume := corev1.Volume{
+			Name: "code-server-secret-vol",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &secretSource,
+			},
+		}
+		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes, secretVolume)
+		for _, container := range dep.Spec.Template.Spec.Containers {
+			if container.Name == CSNAME {
+				secretsArgument := []string{"--cert", fmt.Sprintf("/etc/config/csserver/%s", CertFile), "--cert-key", fmt.Sprintf("/etc/config/csserver/%s", CertKey)}
+				container.Args = append(container.Args, secretsArgument...)
+				newVolumeMounts := []corev1.VolumeMount{
+					{
+						MountPath: "/etc/config/csserver",
+						Name:      "code-server-secret-vol",
+						SubPath: CertFile,
+					},
+					{
+						MountPath: "/etc/config/csserver",
+						Name:      "code-server-secret-vol",
+						SubPath: CertKey,
+					},
+				}
+				container.VolumeMounts = append(container.VolumeMounts, newVolumeMounts...)
+			}
+		}
+	}
 	// Set CodeServer instance as the owner of the Deployment.
 	controllerutil.SetControllerReference(m, dep, r.Scheme)
 	return dep
 }
 
 // serviceForCodeServer function takes in a CodeServer object and returns a Service for that object.
-func (r *CodeServerReconciler) serviceForCodeServer(m *csv1alpha1.CodeServer) *corev1.Service {
+func (r *CodeServerReconciler) serviceForCodeServer(m *csv1alpha1.CodeServer, secret *corev1.Secret) *corev1.Service {
 	ls := labelsForCodeServer(m.Name)
 	ser := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -550,12 +611,6 @@ func (r *CodeServerReconciler) serviceForCodeServer(m *csv1alpha1.CodeServer) *c
 			Selector: ls,
 			Ports: []corev1.ServicePort{
 				{
-					Port:       80,
-					Name:       "web-ui",
-					Protocol:   corev1.ProtocolTCP,
-					TargetPort: intstr.FromInt(8080),
-				},
-				{
 					Port:       8000,
 					Name:       "web-status",
 					Protocol:   corev1.ProtocolTCP,
@@ -563,6 +618,21 @@ func (r *CodeServerReconciler) serviceForCodeServer(m *csv1alpha1.CodeServer) *c
 				},
 			},
 		},
+	}
+	if secret == nil {
+		ser.Spec.Ports = append(ser.Spec.Ports, corev1.ServicePort{
+			Port:       80,
+			Name:       "web-ui",
+			Protocol:   corev1.ProtocolTCP,
+			TargetPort: intstr.FromInt(80),
+		})
+	} else {
+		ser.Spec.Ports = append(ser.Spec.Ports, corev1.ServicePort{
+			Port:       443,
+			Name:       "web-ui",
+			Protocol:   corev1.ProtocolTCP,
+			TargetPort: intstr.FromInt(443),
+		})
 	}
 	// Set CodeServer instance as the owner of the Service.
 	controllerutil.SetControllerReference(m, ser, r.Scheme)
@@ -596,14 +666,18 @@ func (r *CodeServerReconciler) pvcForCodeServer(m *csv1alpha1.CodeServer) (*core
 }
 
 // ingressForCodeServer function takes in a CodeServer object and returns a ingress for that object.
-func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer) *extv1.Ingress {
+func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer, secret *corev1.Secret) *extv1.Ingress {
+	servicePort := intstr.FromInt(80)
+	if secret != nil {
+		servicePort = intstr.FromInt(443)
+	}
 	httpValue := extv1.HTTPIngressRuleValue{
 		Paths: []extv1.HTTPIngressPath{
 			{
 				Path: fmt.Sprintf("/%s(/|$)(.*)", m.Spec.URL),
 				Backend: extv1.IngressBackend{
 					ServiceName: m.Name,
-					ServicePort: intstr.FromInt(80),
+					ServicePort: servicePort,
 				},
 			},
 		},

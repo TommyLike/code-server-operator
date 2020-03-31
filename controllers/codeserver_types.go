@@ -27,6 +27,7 @@ type CodeServerOption struct {
 	ExporterImage string
 	ProbeInterval int
 	MaxProbeRetry int
+	HttpsSecretName   string
 }
 
 type WatchType string
