@@ -27,6 +27,8 @@ type CodeServerOption struct {
 	ExporterImage string
 	ProbeInterval int
 	MaxProbeRetry int
+	HttpsSecretName   string
+	UrlPrefix   string
 }
 
 type WatchType string
@@ -45,3 +47,4 @@ type CodeServerRequest struct {
 	endpoint     string
 	inactiveTime metav1.Time
 }
+
