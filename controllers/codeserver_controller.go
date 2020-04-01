@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"strings"
 
 	csv1alpha1 "github.com/tommylike/code-server-operator/api/v1alpha1"
 )
@@ -464,7 +465,7 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer,
 	dataVolume := corev1.PersistentVolumeClaimVolumeSource{
 		ClaimName: m.Name,
 	}
-	arguments := []string{"--base-path", fmt.Sprintf("/%s", m.Spec.URL)}
+	arguments := []string{"--base-path", r.getInstanceUrl(m)}
 	if secret == nil {
 		arguments = append(arguments, []string{"--port", "8080"}...)
 	} else {
@@ -661,6 +662,14 @@ func (r *CodeServerReconciler) pvcForCodeServer(m *csv1alpha1.CodeServer) (*core
 	return pvc, nil
 }
 
+func (r *CodeServerReconciler) getInstanceUrl(m *csv1alpha1.CodeServer) string {
+	if len(r.Options.UrlPrefix) == 0  {
+		return fmt.Sprintf("/%s", strings.Trim(m.Spec.URL, "/"))
+	} else {
+		return fmt.Sprintf("/%s/%s", strings.Trim(r.Options.UrlPrefix, "/"), strings.Trim(m.Spec.URL, "/"))
+	}
+}
+
 // ingressForCodeServer function takes in a CodeServer object and returns a ingress for that object.
 func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer, secret *corev1.Secret) *extv1.Ingress {
 	servicePort := intstr.FromInt(8080)
@@ -670,7 +679,7 @@ func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer, se
 	httpValue := extv1.HTTPIngressRuleValue{
 		Paths: []extv1.HTTPIngressPath{
 			{
-				Path: fmt.Sprintf("/%s(/|$)(.*)", m.Spec.URL),
+				Path: fmt.Sprintf("%s(/|$)(.*)", r.getInstanceUrl(m)),
 				Backend: extv1.IngressBackend{
 					ServiceName: m.Name,
 					ServicePort: servicePort,
@@ -682,7 +691,7 @@ func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer, se
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        m.Name,
 			Namespace:   m.Namespace,
-			Annotations: annotationsForIngress(m, secret),
+			Annotations: r.annotationsForIngress(m, secret),
 		},
 		Spec: extv1.IngressSpec{
 			Rules: []extv1.IngressRule{
@@ -708,9 +717,9 @@ func (r *CodeServerReconciler) ingressForCodeServer(m *csv1alpha1.CodeServer, se
 	return ingress
 }
 
-func annotationsForIngress(m *csv1alpha1.CodeServer, secret *corev1.Secret) map[string]string {
+func (r *CodeServerReconciler) annotationsForIngress(m *csv1alpha1.CodeServer, secret *corev1.Secret) map[string]string {
 	snippet := fmt.Sprintf(`proxy_set_header Accept-Encoding '';
-sub_filter '<head>' '<head> <base href="/%s/">';`, m.Spec.URL)
+sub_filter '<head>' '<head> <base href="%s/">';`, r.getInstanceUrl(m))
 	annotation := map[string]string{
 		"kubernetes.io/ingress.class":                       "nginx",
 		"nginx.ingress.kubernetes.io/use-regex":             "true",

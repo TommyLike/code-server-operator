@@ -82,7 +82,8 @@ func main() {
 		"time in seconds between two probes on code server instance.")
 	flag.IntVar(&csOption.MaxProbeRetry, "max-probe-retry", 4,
 		"count before marking code server inactive when failed to probe liveness")
-	flag.StringVar(&csOption.HttpsSecretName, "secrets-name", "web-secrets", "Secret which holds the https cert(tls.crt) and key file(tls.key).")
+	flag.StringVar(&csOption.HttpsSecretName, "secrets-name", "web-secrets", "Secret which holds the https cert(tls.crt) and key file(tls.key). This secret will be used in ingress controller as well as code server instance.")
+	flag.StringVar(&csOption.UrlPrefix, "url-prefix", "web-secrets", "Secret which holds the https cert(tls.crt) and key file(tls.key). This secret will be used in ingress controller as well as code server instance.")
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(func(o *zap.Options) {
@@ -130,3 +131,4 @@ func main() {
 		os.Exit(1)
 	}
 }
+
