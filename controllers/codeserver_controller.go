@@ -453,9 +453,9 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer,
 	baseCodeVolume := "code-server-project-dir"
 	ls := labelsForCodeServer(m.Name)
 	replicas := int32(1)
-	enablePriviledge := true
+	enablePriviledge := m.Spec.Privileged
 	priviledged := corev1.SecurityContext{
-		Privileged: &enablePriviledge,
+		Privileged: enablePriviledge,
 	}
 	shareQuantity, _ := resourcev1.ParseQuantity("500M")
 	shareVolume := corev1.EmptyDirVolumeSource{

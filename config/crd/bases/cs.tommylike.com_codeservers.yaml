@@ -34,6 +34,20 @@ spec:
         spec:
           description: CodeServerSpec defines the desired state of CodeServer
           properties:
+            aliveProbe:
+              description: Specifies the alive probe to detect whether pod is in use,
+                IP address needs to be 0.0.0.0
+              type: string
+            args:
+              description: Specifies the envs
+              items:
+                type: string
+              type: array
+            envs:
+              description: Specifies the envs
+              items:
+                type: string
+              type: array
             image:
               description: Specifies the image used to running code server
               type: string
@@ -50,6 +64,13 @@ spec:
               description: Specifies the init plugins that will be running to finish
                 before code server running.
               type: object
+            port:
+              description: Specifies the pod port that will be mapped to ingress backend
+              format: int64
+              type: integer
+            privileged:
+              description: Whether to enable pod privileged
+              type: boolean
             recycleAfterSeconds:
               description: Specifies the period before controller recycle the resource
                 (delete all resources).
@@ -73,14 +94,14 @@ spec:
                     value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/'
                   type: object
               type: object
-            serverCipher:
-              description: Specifies the cipher for coder server login
+            runtime:
+              description: Specifies the runtime used for pod boostrap
               type: string
             storageClassName:
               description: Specifies the storage class name for the persistent volume
               type: string
             url:
-              description: Specifies the url for website visiting
+              description: Specifies the url for pod visiting
               type: string
             volumeSize:
               description: Specifies the volume size that will be used for code server

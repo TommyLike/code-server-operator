@@ -24,10 +24,24 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// RuntimeType describes the runtime used for pod boostrap
+type RuntimeType string
+
+const (
+	// RuntimeContainer stands for application container.
+	RuntimeContainer RuntimeType = "Container"
+	// RuntimeLxd stands for system container.
+	RuntimeLxd RuntimeType = "Lxd"
+	// RuntimeVM stands for virtual machine.
+	RuntimeVM RuntimeType = "VM"
+	// RuntimeCode stands for VS code.
+	RuntimeCode RuntimeType = "Code"
+)
+
 // CodeServerSpec defines the desired state of CodeServer
 type CodeServerSpec struct {
 	// Specifies the runtime used for pod boostrap
-	Runtime string `json:"runtime,omitempty" protobuf:"bytes,1,opt,name=runtime"`
+	Runtime RuntimeType `json:"runtime,omitempty" protobuf:"bytes,1,opt,name=runtime"`
 	// Specifies the volume size that will be used for code server
 	VolumeSize string `json:"volumeSize,omitempty" protobuf:"bytes,2,opt,name=volumeSize"`
 	// Specifies the storage class name for the persistent volume
