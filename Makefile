@@ -63,7 +63,7 @@ docker-build:
 docker-push:
 	docker push ${IMG}
 
-# Generate yamls for deploy
+# Generate yaml for deploy
 generate-yaml:
 	kustomize build config/crd
 	cd config/manager && kustomize edit set image controller=${IMG}

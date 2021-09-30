@@ -26,6 +26,8 @@ import (
 
 // CodeServerSpec defines the desired state of CodeServer
 type CodeServerSpec struct {
+	// Specifies the runtime used for pod boostrap
+	Runtime string `json:"runtime,omitempty" protobuf:"bytes,1,opt,name=runtime"`
 	// Specifies the volume size that will be used for code server
 	VolumeSize string `json:"volumeSize,omitempty" protobuf:"bytes,2,opt,name=volumeSize"`
 	// Specifies the storage class name for the persistent volume
@@ -36,14 +38,22 @@ type CodeServerSpec struct {
 	RecycleAfterSeconds *int64 `json:"recycleAfterSeconds,omitempty" protobuf:"bytes,5,opt,name=recycleAfterSeconds"`
 	// Specifies the resource requirements for code server pod.
 	Resources v1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,6,opt,name=resources"`
-	// Specifies the cipher for coder server login
-	ServerCipher string `json:"serverCipher,omitempty" protobuf:"bytes,7,opt,name=serverCipher"`
-	// Specifies the url for website visiting
-	URL string `json:"url,omitempty" protobuf:"bytes,8,opt,name=url"`
+	// Specifies the url for pod visiting
+	URL string `json:"url,omitempty" protobuf:"bytes,7,opt,name=url"`
+	// Specifies the pod port that will be mapped to ingress backend
+	Port *int64 `json:"port,omitempty" protobuf:"bytes,8,opt,name=port"`
+	// Specifies the envs
+	Envs []string `json:"envs,omitempty" protobuf:"bytes,9,opt,name=envs"`
+	// Specifies the envs
+	Args []string `json:"args,omitempty" protobuf:"bytes,10,opt,name=args"`
 	// Specifies the image used to running code server
-	Image string `json:"image,omitempty" protobuf:"bytes,9,opt,name=image"`
+	Image string `json:"image,omitempty" protobuf:"bytes,11,opt,name=image"`
+	// Specifies the alive probe to detect whether pod is in use, IP address needs to be 0.0.0.0
+	AliveProbe string `json:"aliveProbe,omitempty" protobuf:"bytes,12,opt,name=aliveProbe"`
+	// Whether to enable pod privileged
+	Privileged *bool `json:"privileged,omitempty" protobuf:"bytes,13,opt,name=privileged"`
 	// Specifies the init plugins that will be running to finish before code server running.
-	InitPlugins map[string][]string `json:"initPlugins,omitempty" protobuf:"bytes,10,opt,name=initPlugins"`
+	InitPlugins map[string][]string `json:"initPlugins,omitempty" protobuf:"bytes,14,opt,name=initPlugins"`
 }
 
 // ServerConditionType describes the type of state of code server condition

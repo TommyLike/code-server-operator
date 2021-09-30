@@ -496,12 +496,6 @@ func (r *CodeServerReconciler) deploymentForCodeServer(m *csv1alpha1.CodeServer,
 							Image:           m.Spec.Image,
 							Name:            CSNAME,
 							ImagePullPolicy: corev1.PullIfNotPresent,
-							Env: []corev1.EnvVar{
-								{
-									Name:  "PASSWORD",
-									Value: m.Spec.ServerCipher,
-								},
-							},
 							Args: arguments,
 							SecurityContext: &priviledged,
 							VolumeMounts: []corev1.VolumeMount{
